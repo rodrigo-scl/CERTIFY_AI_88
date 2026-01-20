@@ -8,6 +8,8 @@ interface AuthContextType {
   isAdmin: boolean;
   canEdit: boolean; // True for Admin and Supervisor
   isBranchManager: boolean;
+  permissions: string[]; // List of enabled permission keys
+  hasPermission: (key: string) => boolean;
   refreshProfile: () => Promise<void>;
 }
 
@@ -15,19 +17,22 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<AppUser | null>(null);
+  const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (authUser: { id: string; email?: string; user_metadata?: any }): Promise<AppUser> => {
+  const fetchProfile = async (authUser: { id: string; email?: string; user_metadata?: any }): Promise<{ profile: AppUser; perms: string[] }> => {
     // Perfil base con valores por defecto - Rodrigo Osorio v0.9
     const baseProfile: AppUser = {
       id: authUser.id,
       name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'Usuario',
       email: authUser.email || '',
-      role: 'Administrador',
+      role: 'Visualizador', // SEGURIDAD: Mínimo privilegio por defecto
       status: 'ACTIVE',
       lastLogin: null,
       assignedBranchIds: []
     };
+
+    let userPerms: string[] = [];
 
     // Enriquecer con datos de app_users (timeout 3s para evitar bloqueos)
     try {
@@ -62,24 +67,37 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (branchesResult?.data && !branchesResult?.error) {
         baseProfile.assignedBranchIds = branchesResult.data.map((b: any) => b.branch_id);
       }
+
+      // Rodrigo Osorio v1.0 - Cargar Permisos Dinámicos
+      const { data: permData } = await supabase
+        .from('role_permissions')
+        .select('permission_key')
+        .eq('role_id', baseProfile.role)
+        .eq('enabled', true);
+
+      if (permData) {
+        userPerms = permData.map(p => p.permission_key);
+      }
     } catch {
       // Si falla o timeout, continúa con perfil base
     }
 
-    return baseProfile;
+    return { profile: baseProfile, perms: userPerms };
   };
 
   const refreshProfile = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
-      const profile = await fetchProfile({
+      const { profile, perms } = await fetchProfile({
         id: session.user.id,
         email: session.user.email,
         user_metadata: session.user.user_metadata
       });
       setUser(profile);
+      setPermissions(perms);
     } else {
       setUser(null);
+      setPermissions([]);
     }
   };
 
@@ -89,14 +107,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const { data: { session } } = await supabase.auth.getSession();
 
       if (session?.user) {
-        const profile = await fetchProfile({
+        const { profile, perms } = await fetchProfile({
           id: session.user.id,
           email: session.user.email,
           user_metadata: session.user.user_metadata
         });
         setUser(profile);
+        setPermissions(perms);
       } else {
         setUser(null);
+        setPermissions([]);
       }
       setLoading(false);
     };
@@ -107,16 +127,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (event === 'SIGNED_OUT') {
         setUser(null);
+        setPermissions([]);
         setLoading(false);
       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
         if (session?.user) {
           setLoading(true);
-          const profile = await fetchProfile({
+          const { profile, perms } = await fetchProfile({
             id: session.user.id,
             email: session.user.email,
             user_metadata: session.user.user_metadata
           });
           setUser(profile);
+          setPermissions(perms);
           setLoading(false);
         }
       }
@@ -129,12 +151,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Optimización v0.10 - Rodrigo Osorio: Memoizar cálculos para evitar re-renders innecesarios
   const isAdmin = useMemo(() =>
-    user?.role === 'Administrador' || user?.role === 'Superadministrador',
+    user?.role === 'Administrador' || user?.role === 'Superadministrador' || user?.role === 'Gestor',
     [user?.role]
   );
 
   const canEdit = useMemo(() =>
-    user?.role === 'Administrador' || user?.role === 'Superadministrador' || user?.role === 'Supervisor' || user?.role === 'Gerente de Sucursal',
+    user?.role === 'Administrador' || user?.role === 'Superadministrador' || user?.role === 'Gestor' || user?.role === 'Supervisor' || user?.role === 'Gerente de Sucursal',
     [user?.role]
   );
 
@@ -143,6 +165,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     [user?.role]
   );
 
+  const hasPermission = (key: string) => {
+    // El Superadministrador siempre tiene todos los permisos
+    if (user?.role === 'Superadministrador') return true;
+    return permissions.includes(key);
+  };
+
   // Memoizar el valor del contexto completo para evitar re-renders cuando no hay cambios reales
   const contextValue = useMemo(() => ({
     user,
@@ -150,8 +178,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     isAdmin,
     canEdit,
     isBranchManager,
+    permissions,
+    hasPermission,
     refreshProfile
-  }), [user, loading, isAdmin, canEdit, isBranchManager, refreshProfile]);
+  }), [user, loading, isAdmin, canEdit, isBranchManager, permissions, refreshProfile]);
 
 
   return (

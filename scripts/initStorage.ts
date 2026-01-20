@@ -1,12 +1,20 @@
-// Script de inicialización de buckets de Storage - Rodrigo Osorio v0.1
+// Script de inicialización de buckets de Storage - Rodrigo Osorio v0.2
 // Este script crea los buckets necesarios para el almacenamiento de documentos
+// SEGURIDAD: Las credenciales se obtienen de variables de entorno
 
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://mxjpeadstmfzkeitvnhy.supabase.co';
-// Nota: Para crear buckets necesitas usar la service_role key o tener permisos adecuados
-// Si usas anon key, asegúrate de tener las políticas correctas configuradas
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im14anBlYWRzdG1memtlaXR2bmh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ4NTgxMzAsImV4cCI6MjA4MDQzNDEzMH0.Xrw2XDWMMQn76WYBWj-XVG20aFcMcegw6IJSkuP9GO4';
+// Obtener credenciales desde variables de entorno
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error('❌ Error: Faltan las credenciales de Supabase.');
+  console.error('   Configura las variables de entorno:');
+  console.error('   - SUPABASE_URL o VITE_SUPABASE_URL');
+  console.error('   - SUPABASE_SERVICE_ROLE_KEY (recomendado) o VITE_SUPABASE_ANON_KEY');
+  process.exit(1);
+}
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -61,7 +69,7 @@ async function bucketExists(bucketId: string): Promise<boolean> {
  */
 async function createBucketIfNotExists(bucketConfig: typeof BUCKETS[0]): Promise<{ success: boolean; message: string }> {
   const exists = await bucketExists(bucketConfig.id);
-  
+
   if (exists) {
     return {
       success: true,
@@ -114,7 +122,7 @@ export async function initializeStorageBuckets(): Promise<void> {
     console.log(`📦 Verificando bucket '${bucketConfig.id}'...`);
     const result = await createBucketIfNotExists(bucketConfig);
     results.push(result);
-    
+
     if (result.success) {
       console.log(`✅ ${result.message}\n`);
     } else {
@@ -126,7 +134,7 @@ export async function initializeStorageBuckets(): Promise<void> {
   console.log('\n📊 Resumen:');
   const successful = results.filter(r => r.success).length;
   const failed = results.filter(r => !r.success).length;
-  
+
   console.log(`✅ Buckets creados/verificados: ${successful}`);
   console.log(`❌ Buckets con errores: ${failed}`);
 
@@ -158,4 +166,3 @@ if (require.main === module) {
       process.exit(1);
     });
 }
-

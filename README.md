@@ -21,7 +21,7 @@ Esta versión incluye optimizaciones significativas que mejoran el rendimiento e
 - ✅ **Optimización de re-renders** con useMemo y useCallback
 - ✅ **Lazy loading** de todas las rutas principales
 
-📊 **Ver detalles completos:** [PERFORMANCE_OPTIMIZATIONS.md](./PERFORMANCE_OPTIMIZATIONS.md)
+📊 **Ver detalles completos:** [PERFORMANCE.md](./PERFORMANCE.md)
 
 ## 🔐 Configuración de Seguridad v0.11
 
@@ -153,6 +153,14 @@ certify-ai/
 - [ ] Auditoría de seguridad automatizada
 
 ## 📝 Changelog
+
+### v0.12 (Diciembre 2025)
+- 🚀 **PERFORMANCE:** Bundle splitting inteligente y minificación agresiva
+- 🚀 **PERFORMANCE:** Sistema de caché mejorado con stale-while-revalidate
+- 🚀 **PERFORMANCE:** Lazy loading de imágenes con Intersection Observer
+- 🚀 **PERFORMANCE:** Hook `usePrefetch` para precarga de datos críticos
+- 📊 Reducción de queries a Supabase en ~60%
+- 📚 Ver detalles en [PERFORMANCE.md](./PERFORMANCE.md)
 
 ### v0.11 (Diciembre 2025)
 - 🔐 **SEGURIDAD:** Migración a variables de entorno para credenciales

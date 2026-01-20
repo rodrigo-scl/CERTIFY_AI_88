@@ -348,7 +348,7 @@ const AIAssistantModal = memo(({ isOpen, onClose }: { isOpen: boolean, onClose: 
 
 export const Layout = ({ children }: LayoutProps) => {
   const location = useLocation();
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, hasPermission } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // Rodrigo Osorio v0.8 - sidebar colapsable sin romper UX
@@ -425,19 +425,26 @@ export const Layout = ({ children }: LayoutProps) => {
               {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
             </button>
           </div>
-
           <nav className={`flex-1 ${sidebarCollapsed ? 'px-1' : 'px-3'} py-6 space-y-1 overflow-y-auto`}>
             <SidebarItem key="nav-dash" to="/" icon={LayoutDashboard} label="Dashboard" active={isActive('/')} collapsed={sidebarCollapsed} />
             <SidebarItem key="nav-tech" to="/technicians" icon={Users} label="Técnicos" active={isActive('/technicians')} collapsed={sidebarCollapsed} />
             <SidebarItem key="nav-comp" to="/companies" icon={Building2} label="Empresas" active={isActive('/companies')} collapsed={sidebarCollapsed} />
             <SidebarItem key="nav-bran" to="/branches" icon={MapPin} label="Sucursales" active={isActive('/branches')} collapsed={sidebarCollapsed} />
             <SidebarItem key="nav-avail" to="/availability" icon={CalendarDays} label="Disponibilidad" active={isActive('/availability')} collapsed={sidebarCollapsed} />
-            {isAdmin && (
-              <>
-                <SidebarItem key="nav-para" to="/parameters" icon={Sliders} label="Parámetros" active={isActive('/parameters')} collapsed={sidebarCollapsed} />
-                <SidebarItem key="nav-sett" to="/settings" icon={Settings} label="Configuración" active={isActive('/settings')} collapsed={sidebarCollapsed} />
-                <SidebarItem key="nav-audit" to="/audit" icon={ShieldCheck} label="Auditoría" active={isActive('/audit')} collapsed={sidebarCollapsed} />
-              </>
+
+            {(isAdmin || hasPermission('view_parameters') || hasPermission('view_audit')) && (
+              <div className="pt-4 pb-2">
+                {!sidebarCollapsed && <div className="px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 opacity-50">Administración</div>}
+                {hasPermission('view_parameters') && (
+                  <SidebarItem key="nav-para" to="/parameters" icon={Sliders} label="Parámetros" active={isActive('/parameters')} collapsed={sidebarCollapsed} />
+                )}
+                {isAdmin && (
+                  <SidebarItem key="nav-sett" to="/settings" icon={Settings} label="Configuración" active={isActive('/settings')} collapsed={sidebarCollapsed} />
+                )}
+                {hasPermission('view_audit') && (
+                  <SidebarItem key="nav-audit" to="/audit" icon={ShieldCheck} label="Auditoría" active={isActive('/audit')} collapsed={sidebarCollapsed} />
+                )}
+              </div>
             )}
           </nav>
 
@@ -467,15 +474,17 @@ export const Layout = ({ children }: LayoutProps) => {
             </button>
           </div>
         </div>
-      </aside>
+      </aside >
 
       {/* Overlay for mobile */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-30 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+      {
+        sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black/50 z-30 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )
+      }
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden w-full">
@@ -541,6 +550,6 @@ export const Layout = ({ children }: LayoutProps) => {
       </div>
 
       <AIAssistantModal isOpen={aiModalOpen} onClose={() => setAiModalOpen(false)} />
-    </div>
+    </div >
   );
 };

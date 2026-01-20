@@ -10,6 +10,9 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 // Rodrigo Osorio v0.7 - Habilitar encriptación de archivos
 const ENCRYPTION_ENABLED = true;
+
+// Rodrigo Osorio v0.12 - Duración de URLs firmadas (1 hora)
+const SIGNED_URL_EXPIRY = 3600;
 const ALLOWED_TYPES = [
   'application/pdf',
   'image/jpeg',
@@ -392,10 +395,15 @@ export const uploadTechnicianDocument = async (
       return { success: false, error: error.message };
     }
 
-    // Obtener URL publica
-    const { data: urlData } = supabase.storage
+    // Obtener URL firmada (funciona con buckets privados)
+    const { data: urlData, error: urlError } = await supabase.storage
       .from(TECHNICIAN_BUCKET)
-      .getPublicUrl(filePath);
+      .createSignedUrl(filePath, SIGNED_URL_EXPIRY);
+
+    if (urlError || !urlData?.signedUrl) {
+      logger.error('Error generando URL firmada:', urlError);
+      return { success: false, error: 'Error al generar URL del archivo' };
+    }
 
     logStorageOperation('upload', TECHNICIAN_BUCKET, {
       status: 'success',
@@ -408,7 +416,7 @@ export const uploadTechnicianDocument = async (
 
     return {
       success: true,
-      url: urlData.publicUrl,
+      url: urlData.signedUrl,
       path: filePath
     };
   } catch (err: any) {
@@ -494,10 +502,15 @@ export const uploadCompanyDocument = async (
       return { success: false, error: error.message };
     }
 
-    // Obtener URL publica
-    const { data: urlData } = supabase.storage
+    // Obtener URL firmada (funciona con buckets privados)
+    const { data: urlData, error: urlError } = await supabase.storage
       .from(COMPANY_BUCKET)
-      .getPublicUrl(filePath);
+      .createSignedUrl(filePath, SIGNED_URL_EXPIRY);
+
+    if (urlError || !urlData?.signedUrl) {
+      logger.error('Error generando URL firmada:', urlError);
+      return { success: false, error: 'Error al generar URL del archivo' };
+    }
 
     logStorageOperation('upload', COMPANY_BUCKET, {
       status: 'success',
@@ -510,7 +523,7 @@ export const uploadCompanyDocument = async (
 
     return {
       success: true,
-      url: urlData.publicUrl,
+      url: urlData.signedUrl,
       path: filePath
     };
   } catch (err: any) {
@@ -618,14 +631,21 @@ export const downloadAndDecrypt = async (
   }
 };
 
-// Obtener URL de descarga directa
-export const getDocumentUrl = (
+// Obtener URL de descarga directa (firmada para buckets privados)
+export const getDocumentUrl = async (
   bucket: 'technician' | 'company',
   filePath: string
-): string => {
+): Promise<string> => {
   const bucketName = bucket === 'technician' ? TECHNICIAN_BUCKET : COMPANY_BUCKET;
-  const { data } = supabase.storage.from(bucketName).getPublicUrl(filePath);
-  return data.publicUrl;
+  const { data, error } = await supabase.storage
+    .from(bucketName)
+    .createSignedUrl(filePath, SIGNED_URL_EXPIRY);
+
+  if (error || !data?.signedUrl) {
+    logger.error('Error generando URL firmada:', error);
+    return '';
+  }
+  return data.signedUrl;
 };
 
 // Eliminar documento

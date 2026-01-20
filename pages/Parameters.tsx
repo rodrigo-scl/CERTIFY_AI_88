@@ -17,6 +17,7 @@ import {
 import { Industry, DocumentType, AppUser, WorkArea, TechnicianType, SLAType, DocScope, RenewalType, RenewalUnit, ServiceProvider, SupplierPortal, Holiday } from '../types';
 import { Pagination } from '../components/shared/Pagination';
 import { usePagination } from '../hooks/usePagination';
+import { RolePermissionsMatrix } from '../components/RolePermissionsMatrix';
 
 // --- SUB-COMPONENTS FOR MASTER DATA ---
 
@@ -1084,6 +1085,7 @@ export const Parameters = () => {
         { id: 'eps', label: 'Empresas Prestadoras', icon: Building2 },
         { id: 'portals', label: 'Portales de Proveedores', icon: Globe },
         { id: 'holidays', label: 'Feriados', icon: CalendarDays },
+        { id: 'roles', label: 'Roles y Permisos', icon: Shield },
     ];
 
     return (
@@ -1120,6 +1122,7 @@ export const Parameters = () => {
                 {activeTab === 'eps' && <ServiceProvidersSettings />}
                 {activeTab === 'portals' && <SupplierPortalsSettings />}
                 {activeTab === 'holidays' && <HolidaysSettings />}
+                {activeTab === 'roles' && <RolePermissionsMatrix />}
             </div>
         </div>
     );

@@ -1,7 +1,7 @@
 // Rodrigo Osorio v0.10 - Simplified Settings focusing on Users/System/Security
 import React, { useState, useEffect } from 'react';
 import {
-  Shield, Plus, Save, Trash2, X, Edit2, User as UserIcon, Server, Lock, AlertTriangle, RefreshCw, Activity, Loader2, Building2, Bot, Sparkles
+  Shield, Plus, Save, Trash2, X, Edit2, User as UserIcon, Server, Lock, AlertTriangle, RefreshCw, Activity, Loader2, Building2, Bot, Sparkles, ExternalLink
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import {
@@ -9,6 +9,7 @@ import {
 } from '../services/dataService';
 import { AppUser, Branch } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { RolePermissionsMatrix } from '../components/RolePermissionsMatrix';
 
 // --- SUB-COMPONENTS FOR EACH SETTING TAB ---
 
@@ -97,6 +98,7 @@ const UsersSettings = () => {
               <select className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none bg-white font-medium text-slate-900"
                 value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })}>
                 <option>Administrador</option>
+                <option>Gestor</option>
                 <option>Supervisor</option>
                 <option>Gerente de Sucursal</option>
                 <option>Auditor</option>
@@ -465,33 +467,58 @@ const AISettings = () => {
 // 4. SECURITY DASHBOARD
 const SecuritySettings = () => {
   return (
-    <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm animate-in fade-in">
-      <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
-        <Lock size={20} className="text-brand-600" /> Seguridad y Auditoría
-      </h3>
-      <div className="space-y-4">
-        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-100">
-          <div className="flex items-center gap-3">
-            <Shield size={24} className="text-green-600" />
-            <div>
-              <div className="font-bold text-slate-900">Autenticación Supabase</div>
-              <div className="text-xs text-slate-500">MFA no habilitado para todos los roles</div>
+    <div className="space-y-6 animate-in fade-in">
+      {/* Status Cards */}
+      <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+        <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
+          <Lock size={20} className="text-brand-600" /> Estado de Seguridad
+        </h3>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-100">
+            <div className="flex items-center gap-3">
+              <Shield size={24} className="text-green-600" />
+              <div>
+                <div className="font-bold text-slate-900">Autenticación Supabase</div>
+                <div className="text-xs text-slate-500">MFA no habilitado para todos los roles</div>
+              </div>
             </div>
+            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">Activo</span>
           </div>
-          <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">Activo</span>
-        </div>
 
-        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-100">
-          <div className="flex items-center gap-3">
-            <Lock size={24} className="text-blue-600" />
-            <div>
-              <div className="font-bold text-slate-900">Encriptación en Reposo</div>
-              <div className="text-xs text-slate-500">AES-256 habilitado en base de datos</div>
+          <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-100">
+            <div className="flex items-center gap-3">
+              <Lock size={24} className="text-blue-600" />
+              <div>
+                <div className="font-bold text-slate-900">Encriptación en Reposo</div>
+                <div className="text-xs text-slate-500">AES-256 habilitado en base de datos</div>
+              </div>
             </div>
+            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">Seguro</span>
           </div>
-          <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">Seguro</span>
         </div>
       </div>
+
+      {/* Audit Access Link */}
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-brand-100 text-brand-700 rounded-full">
+            <Activity size={24} />
+          </div>
+          <div>
+            <h4 className="font-bold text-slate-900">Centro de Auditoría Integral</h4>
+            <p className="text-xs text-slate-500">Consulta quién ha visualizado contraseñas o descargado documentos.</p>
+          </div>
+        </div>
+        <button
+          onClick={() => window.location.hash = '#/audit'}
+          className="flex items-center gap-2 px-6 py-2 bg-white border border-slate-300 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all shadow-sm"
+        >
+          <ExternalLink size={16} /> Ver Registros de Auditoría
+        </button>
+      </div>
+
+      {/* Role Permissions Matrix */}
+      <RolePermissionsMatrix />
     </div>
   );
 };

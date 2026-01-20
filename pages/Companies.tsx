@@ -28,6 +28,7 @@ import { FileUpload } from '../components/shared/FileUpload';
 import { Pagination } from '../components/shared/Pagination';
 import { usePagination } from '../hooks/usePagination';
 import { useDebounce } from '../hooks/useDebounce';
+import { PasswordReveal } from '../components/PasswordReveal';
 import { useAuth } from '../context/AuthContext';
 import { Skeleton } from '../components/shared/Skeleton';
 
@@ -36,7 +37,7 @@ import { Skeleton } from '../components/shared/Skeleton';
 // Rodrigo Osorio v0.7 - Empresas Prestadoras de Servicio
 const CompanyDetail = ({ company, onBack }: { company: Company, onBack: () => void }) => {
     const navigate = useNavigate();
-    const { canEdit } = useAuth();
+    const { canEdit, hasPermission } = useAuth();
     const [activeTab, setActiveTab] = useState<'TECHS' | 'DOCS' | 'REQS' | 'COMP_REQS' | 'EPS'>('TECHS');
     const [technicians, setTechnicians] = useState<Technician[]>([]);
     const [companyDocs, setCompanyDocs] = useState<CompanyCredential[]>([]);
@@ -231,7 +232,7 @@ const CompanyDetail = ({ company, onBack }: { company: Company, onBack: () => vo
     const filteredTechs = technicians.filter(t => t.name.toLowerCase().includes(debouncedTechSearch.toLowerCase()) || t.rut.includes(debouncedTechSearch));
 
     const handleUnlink = async (techId: string) => {
-        if (!canEdit) return;
+        if (!hasPermission('edit_companies')) return;
         if (window.confirm('¿Desvincular técnico de esta empresa?')) {
             await unlinkCompanyFromTechnician(techId, company.id);
             refresh();
@@ -239,20 +240,20 @@ const CompanyDetail = ({ company, onBack }: { company: Company, onBack: () => vo
     }
 
     const handleGlobalToggle = async (techId: string, currentStatus: boolean) => {
-        if (!canEdit) return;
+        if (!hasPermission('edit_technicians')) return;
         await toggleTechnicianStatus(techId, !currentStatus);
         refresh();
     }
 
     const handleCompanyBlock = async (techId: string, isBlocked: boolean) => {
-        if (!canEdit) return;
+        if (!hasPermission('block_technicians')) return;
         await toggleTechnicianCompanyBlock(techId, company.id, !isBlocked);
         refresh();
     }
 
     const handleUpdateCompany = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!canEdit) return;
+        if (!hasPermission('edit_companies')) return;
         const result = await updateCompany(company.id, editCompanyData);
         if (!result.success) {
             alert(result.error || 'No se pudo actualizar la empresa');
@@ -468,8 +469,14 @@ const CompanyDetail = ({ company, onBack }: { company: Company, onBack: () => vo
                                                 </div>
                                             )}
                                             {company.supplierPortal.password && (
-                                                <div className="flex items-center gap-2 mt-1 text-slate-400">
-                                                    <Lock size={14} /> ••••••••
+                                                <div className="flex items-center gap-2 mt-1 text-slate-600">
+                                                    <Lock size={14} />
+                                                    <PasswordReveal
+                                                        password={company.supplierPortal.password}
+                                                        entityType="supplier_portal"
+                                                        entityId={company.supplierPortal.id}
+                                                        entityName={company.supplierPortal.name}
+                                                    />
                                                 </div>
                                             )}
                                         </>
@@ -2008,7 +2015,7 @@ const NewCompanyModal = ({ isOpen, onClose, onSave, industries, holdings, techDo
 import { ArrowUpDown, ChevronLeft as ChevronLeftIcon, ChevronsLeft, ChevronsRight, Filter } from 'lucide-react';
 
 export const Companies = () => {
-    const { canEdit } = useAuth();
+    const { canEdit, hasPermission } = useAuth();
     // Rodrigo Osorio v0.9 - Usa versión ligera para lista (mejor performance)
     const [companies, setCompanies] = useState<CompanyLight[]>([]);
     const [industries, setIndustries] = useState<Industry[]>([]);
@@ -2401,7 +2408,7 @@ export const Companies = () => {
                             </>
                         )}
                     </button>
-                    {canEdit && (
+                    {hasPermission('create_companies') && (
                         <button onClick={() => setIsModalOpen(true)} className="bg-brand-600 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:bg-brand-700 text-sm">
                             <Plus size={16} />
                             Nueva Empresa

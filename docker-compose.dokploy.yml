@@ -1,0 +1,52 @@
+# ============================================================
+# CERTIFY AI - Docker Compose para Dokploy
+# ============================================================
+# Este archivo está optimizado para Dokploy.
+# Dokploy detectará automáticamente este archivo.
+# ============================================================
+
+version: '3.8'
+
+services:
+  # ============================================================
+  # APLICACIÓN PRINCIPAL
+  # ============================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+        - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+    container_name: certify-ai
+    ports:
+      - "${PORT:-3000}:80"
+    environment:
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+      - VITE_DB_MODE=supabase_cloud
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    labels:
+      # Labels para Dokploy/Traefik
+      - "traefik.enable=true"
+      - "traefik.http.services.certify-ai.loadbalancer.server.port=80"
+
+# ============================================================
+# NOTAS PARA DOKPLOY
+# ============================================================
+#
+# Variables requeridas (configurar en Dokploy → Environment):
+#   - VITE_SUPABASE_URL: URL de tu proyecto Supabase
+#   - VITE_SUPABASE_ANON_KEY: Anon key de Supabase
+#   - PORT: Puerto (opcional, default: 3000)
+#
+# El dominio se configura en Dokploy → Domains
+# HTTPS se habilita automáticamente con Let's Encrypt
+#
+# ============================================================

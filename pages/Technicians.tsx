@@ -27,7 +27,7 @@ import { TechnicianAbsenceModal } from '../components/TechnicianAbsenceModal';
 // --- SUB-COMPONENT: DETAIL VIEW ---
 // Memoizar el componente de detalle para evitar re-renders innecesarios
 const TechnicianDetail = memo(({ techId, onBack }: { techId: string, onBack: () => void }) => {
-    const { canEdit } = useAuth();
+    const { canEdit, hasPermission } = useAuth();
     const [tech, setTech] = useState<Technician | undefined>(undefined);
     const [allCompanies, setAllCompanies] = useState<Company[]>([]);
     const [showCompanyModal, setShowCompanyModal] = useState(false);
@@ -1280,7 +1280,7 @@ const NewTechnicianModal = memo(({ isOpen, onClose, onSave, branches, types, com
 // --- MAIN COMPONENT: LIST VIEW ---
 
 export const Technicians = () => {
-    const { user, canEdit, isBranchManager } = useAuth();
+    const { user, canEdit, isBranchManager, hasPermission } = useAuth();
     const [originalTechnicians, setOriginalTechnicians] = useState<Technician[]>([]);
     const [technicians, setTechnicians] = useState<Technician[]>([]);
     const [selectedTechId, setSelectedTechId] = useState<string | null>(null);
@@ -1533,7 +1533,7 @@ export const Technicians = () => {
                             </>
                         )}
                     </button>
-                    {canEdit && (
+                    {hasPermission('create_technicians') && (
                         <>
                             <button
                                 onClick={() => setIsBulkModalOpen(true)}

@@ -1,0 +1,152 @@
+# ============================================================
+# CERTIFY AI - Docker Compose Multi-Database
+# Versión: 1.0
+# Autor: Rodrigo Osorio
+# ============================================================
+#
+# PERFILES DISPONIBLES:
+#   - supabase-cloud  : Solo frontend, BD en Supabase Cloud
+#   - postgres-local  : Frontend + PostgreSQL local
+#   - full-stack      : Frontend + PostgreSQL + pgAdmin
+#
+# EJEMPLOS DE USO:
+#   docker-compose --profile supabase-cloud up -d
+#   docker-compose --profile postgres-local up -d
+#   docker-compose --profile full-stack up -d
+#
+# ============================================================
+
+version: '3.8'
+
+services:
+  # ============================================================
+  # FRONTEND - Siempre disponible
+  # ============================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: certify-ai-app
+    ports:
+      - "${APP_PORT:-3000}:80"
+    environment:
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+      - VITE_DB_MODE=${VITE_DB_MODE:-supabase_cloud}
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - certify-network
+
+  # ============================================================
+  # PERFIL: supabase-cloud
+  # Solo el frontend, base de datos en Supabase Cloud
+  # ============================================================
+  supabase-cloud-info:
+    image: alpine:latest
+    profiles: [ "supabase-cloud" ]
+    command: |
+      echo "
+      ╔══════════════════════════════════════════════════════╗
+      ║  CERTIFY AI - Modo Supabase Cloud                    ║
+      ╠══════════════════════════════════════════════════════╣
+      ║  Frontend: http://localhost:${APP_PORT:-3000}        ║
+      ║  Base de datos: ${VITE_SUPABASE_URL}                 ║
+      ║                                                      ║
+      ║  Asegúrate de haber ejecutado los scripts SQL        ║
+      ║  en tu proyecto de Supabase Cloud.                   ║
+      ╚══════════════════════════════════════════════════════╝
+      "
+    restart: "no"
+
+  # ============================================================
+  # PERFIL: postgres-local / full-stack
+  # PostgreSQL auto-hospedado
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: certify-ai-db
+    profiles: [ "postgres-local", "full-stack" ]
+    environment:
+      POSTGRES_DB: ${DB_NAME:-certify_ai}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-certify2026}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-certify_ai}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - certify-network
+
+  # ============================================================
+  # MIGRADOR - Ejecuta scripts SQL automáticamente
+  # ============================================================
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    container_name: certify-ai-migrator
+    profiles: [ "postgres-local", "full-stack" ]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-certify_ai}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-certify2026}
+      DB_MODE: postgres_local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - certify-network
+    restart: "no"
+
+  # ============================================================
+  # PERFIL: full-stack
+  # Incluye pgAdmin para administración
+  # ============================================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: certify-ai-pgadmin
+    profiles: [ "full-stack" ]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@certify.ai}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin2026}
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - certify-network
+
+# ============================================================
+# VOLÚMENES PERSISTENTES
+# ============================================================
+volumes:
+  postgres_data:
+    name: certify-ai-postgres-data
+  pgadmin_data:
+    name: certify-ai-pgadmin-data
+
+# ============================================================
+# RED
+# ============================================================
+networks:
+  certify-network:
+    name: certify-ai-network
+    driver: bridge

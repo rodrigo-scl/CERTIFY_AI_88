@@ -2676,3 +2676,52 @@ export const deleteHoliday = async (id: string): Promise<{ success: boolean; err
 
   return { success: true };
 };
+
+// --- RBAC: DYNAMIC PERMISSIONS (Rodrigo Osorio v1.0) ---
+
+export const getRoleConfigs = async (): Promise<RoleConfig[]> => {
+  const { data, error } = await supabase
+    .from('role_configs')
+    .select('*')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching role configs:', error);
+    return [];
+  }
+  return data || [];
+};
+
+export const getRolePermissions = async (): Promise<RolePermission[]> => {
+  const { data, error } = await supabase
+    .from('role_permissions')
+    .select('*');
+
+  if (error) {
+    console.error('Error fetching role permissions:', error);
+    return [];
+  }
+
+  return (data || []).map((p: any) => ({
+    roleId: p.role_id,
+    permissionKey: p.permission_key,
+    enabled: p.enabled
+  }));
+};
+
+export const toggleRolePermission = async (roleId: string, permissionKey: string, enabled: boolean): Promise<{ success: boolean; error?: string }> => {
+  const { error } = await supabase
+    .from('role_permissions')
+    .upsert({
+      role_id: roleId,
+      permission_key: permissionKey,
+      enabled: enabled
+    }, { onConflict: 'role_id,permission_key' });
+
+  if (error) {
+    console.error('Error toggling role permission:', error);
+    return { success: false, error: error.message };
+  }
+
+  return { success: true };
+};

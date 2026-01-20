@@ -243,3 +243,17 @@ export interface Holiday {
   isRecurring: boolean;
   createdAt?: string;
 }
+
+// RBAC: Roles y Permisos Dinámicos (Rodrigo Osorio v1.0)
+export interface RoleConfig {
+  id: string;
+  name: string;
+  color: string;
+  description?: string;
+}
+
+export interface RolePermission {
+  roleId: string;
+  permissionKey: string;
+  enabled: boolean;
+}
