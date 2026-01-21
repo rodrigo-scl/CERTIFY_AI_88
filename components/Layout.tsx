@@ -13,6 +13,9 @@ import { SimpleMarkdown } from './shared/SimpleMarkdown';
 import { AlertBanner } from './shared/AlertBanner';
 import { getComplianceAlerts, ComplianceAlert } from '../services/alertService';
 import { GlobalSearch } from './shared/GlobalSearch';
+import { logger } from '../services/logger';
+import { useFaviconBadge } from '../hooks/useFaviconBadge';
+import { useAutoLogout } from '../hooks/useAutoLogout';
 
 interface LayoutProps {
   children?: React.ReactNode;
@@ -365,11 +368,11 @@ export const Layout = ({ children }: LayoutProps) => {
     if (!showAlertBanner) return;
 
     // Carga inicial
-    getComplianceAlerts().then(setAlerts).catch(console.error);
+    getComplianceAlerts().then(setAlerts).catch(logger.error);
 
     // Actualizar cada 5 minutos para mantener datos frescos sin sobrecargar
     const interval = setInterval(() => {
-      getComplianceAlerts().then(setAlerts).catch(console.error);
+      getComplianceAlerts().then(setAlerts).catch(logger.error);
     }, 5 * 60 * 1000); // 5 minutos
 
     return () => clearInterval(interval);
@@ -388,17 +391,23 @@ export const Layout = ({ children }: LayoutProps) => {
     return location.pathname.startsWith(path);
   }, [location.pathname]);
 
+  // Rodrigo Osorio v1.0 - Actualizar favicon con badge
+  useFaviconBadge(alerts.length);
+
   const handleSignOut = useCallback(async () => {
     try {
       await signOut();
     } catch (err) {
-      console.error('Error al cerrar sesión:', err);
+      logger.error('Error al cerrar sesión:', err);
     } finally {
       // Forzar recarga completa para limpiar todo el estado
       window.location.href = window.location.origin + '/#/login';
       window.location.reload();
     }
   }, []);
+
+  // Rodrigo Osorio v1.0 - Auto-Logout por inactividad (30 min)
+  useAutoLogout(30 * 60 * 1000, handleSignOut, !!user);
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">

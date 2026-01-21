@@ -290,7 +290,7 @@ export const getTechnicians = async (branchIds?: string[]): Promise<Technician[]
     // Usar RPC segura que devuelve JSON con datos desencriptados y relaciones
     const { data, error } = await supabase.rpc('get_technicians_full');
 
-    if (error) { console.error("Error fetching technicians", error); return []; }
+    if (error) { logger.error("Error fetching technicians", error); return []; }
 
     return (data || []).map((item: any) => {
       const t = item.j;
@@ -343,7 +343,7 @@ export const getTechnicianById = async (id: string): Promise<Technician | undefi
   const { data, error } = await supabase.rpc('get_technician_detail', { tech_id: id }).single();
 
   if (error || !data) {
-    if (error) console.error("Error fetching technician detail", error);
+    if (error) logger.error("Error fetching technician detail", error);
     return undefined;
   }
 
@@ -387,7 +387,7 @@ export const getTechniciansByCompany = async (companyId: string): Promise<Techni
   const { data, error } = await supabase.rpc('get_technicians_by_company_secure', { p_company_id: companyId });
 
   if (error) {
-    console.error("Error fetching company technicians", error);
+    logger.error("Error fetching company technicians", error);
     return [];
   }
 
@@ -465,7 +465,7 @@ export const checkRutsExist = async (ruts: string[]): Promise<string[]> => {
     .in('rut', ruts);
 
   if (error) {
-    console.error("Error checking RUTs", error);
+    logger.error("Error checking RUTs", error);
     return [];
   }
   return data.map((t: any) => t.rut);
@@ -544,7 +544,7 @@ export const getTechnicianAbsences = async (techId: string): Promise<TechnicianA
     .order('start_date', { ascending: false });
 
   if (error) {
-    console.error("Error fetching absences", error);
+    logger.error("Error fetching absences", error);
     return [];
   }
 
@@ -613,7 +613,7 @@ export const getTechnicianAvailability = async (techId: string): Promise<{ statu
     .maybeSingle();
 
   if (error) {
-    console.error("Error checking availability", error);
+    logger.error("Error checking availability", error);
     return { status: 'AVAILABLE' };
   }
 
@@ -641,7 +641,7 @@ export const getActiveAbsences = async (): Promise<TechnicianAbsence[]> => {
     .gte('end_date', today);
 
   if (error) {
-    console.error("Error fetching active absences", error);
+    logger.error("Error fetching active absences", error);
     return [];
   }
 
@@ -997,7 +997,7 @@ export const getBranchRanking = async (): Promise<BranchRanking[]> => {
     .order('global_score', { ascending: false });
 
   if (error) {
-    console.error("Error fetching branch ranking:", error);
+    logger.error("Error fetching branch ranking:", error);
     return [];
   }
 
@@ -1050,7 +1050,7 @@ export const addArea = async (area: Partial<WorkArea>): Promise<{ success: boole
   }).select().single();
 
   if (error) {
-    console.error('Error adding area:', error);
+    logger.error('Error adding area:', error);
     return { success: false, error: error.message };
   }
 
@@ -1070,7 +1070,7 @@ export const addArea = async (area: Partial<WorkArea>): Promise<{ success: boole
 export const deleteArea = async (id: string): Promise<{ success: boolean; error?: string }> => {
   const { error } = await supabase.from('work_areas').delete().eq('id', id);
   if (error) {
-    console.error('Error deleting area:', error);
+    logger.error('Error deleting area:', error);
     return { success: false, error: error.message };
   }
   return { success: true };
@@ -1220,7 +1220,7 @@ export const addDocumentType = async (doc: Partial<DocumentType>): Promise<{ suc
   }).select().single();
 
   if (error) {
-    console.error('Error adding document type:', error);
+    logger.error('Error adding document type:', error);
     return { success: false, error: error.message };
   }
 
@@ -1245,7 +1245,7 @@ export const addDocumentType = async (doc: Partial<DocumentType>): Promise<{ suc
 export const deleteDocumentType = async (id: string): Promise<{ success: boolean; error?: string }> => {
   const { error } = await supabase.from('document_types').delete().eq('id', id);
   if (error) {
-    console.error('Error deleting document type:', error);
+    logger.error('Error deleting document type:', error);
     return { success: false, error: error.message };
   }
   return { success: true };
@@ -1446,7 +1446,7 @@ export const certifyCredentialInPortal = async (credentialId: string, userId: st
     .eq('id', credentialId);
 
   if (error) {
-    console.error("Error certifying credential", error);
+    logger.error("Error certifying credential", error);
     return { success: false, error: error.message };
   }
 
@@ -1594,7 +1594,7 @@ export const updateCompanyDocRequirements = async (
 
     return { success: true };
   } catch (err: any) {
-    console.error('Error al actualizar requisitos de empresa:', err);
+    logger.error('Error al actualizar requisitos de empresa:', err);
     return { success: false, error: err.message || 'Error al actualizar requisitos' };
   }
 };
@@ -1746,7 +1746,7 @@ export const getTechTypes = async (): Promise<TechnicianType[]> => {
 export const addTechType = async (name: string, description: string): Promise<{ success: boolean; error?: string }> => {
   const { error } = await supabase.from('technician_types').insert({ name, description });
   if (error) {
-    console.error('Error adding tech type:', error);
+    logger.error('Error adding tech type:', error);
     return { success: false, error: error.message };
   }
   return { success: true };
@@ -1755,7 +1755,7 @@ export const addTechType = async (name: string, description: string): Promise<{ 
 export const deleteTechType = async (id: string): Promise<{ success: boolean; error?: string }> => {
   const { error } = await supabase.from('technician_types').delete().eq('id', id);
   if (error) {
-    console.error('Error deleting tech type:', error);
+    logger.error('Error deleting tech type:', error);
     return { success: false, error: error.message };
   }
   return { success: true };
@@ -1769,7 +1769,7 @@ export const getIndustries = async (): Promise<Industry[]> => {
 export const addIndustry = async (name: string): Promise<{ success: boolean; error?: string }> => {
   const { error } = await supabase.from('industries').insert({ name });
   if (error) {
-    console.error('Error adding industry:', error);
+    logger.error('Error adding industry:', error);
     return { success: false, error: error.message };
   }
   return { success: true };
@@ -1778,7 +1778,7 @@ export const addIndustry = async (name: string): Promise<{ success: boolean; err
 export const deleteIndustry = async (id: string): Promise<{ success: boolean; error?: string }> => {
   const { error } = await supabase.from('industries').delete().eq('id', id);
   if (error) {
-    console.error('Error deleting industry:', error);
+    logger.error('Error deleting industry:', error);
     return { success: false, error: error.message };
   }
   return { success: true };
@@ -1841,7 +1841,7 @@ export const logDownloadAudit = async (params: {
       });
     if (error) console.error('Error logging download audit:', error);
   } catch (err) {
-    console.error('Unexpected error in logDownloadAudit:', err);
+    logger.error('Unexpected error in logDownloadAudit:', err);
   }
 };
 
@@ -1877,7 +1877,7 @@ export const getDownloadAudits = async (): Promise<AuditLog[]> => {
           createdAt: log.created_at
         };
       } catch (e) {
-        console.error('Error decrypting log entry:', log.id, e);
+        logger.error('Error decrypting log entry:', log.id, e);
         return {
           id: log.id,
           userId: log.user_id,
@@ -1891,7 +1891,7 @@ export const getDownloadAudits = async (): Promise<AuditLog[]> => {
 
     return decryptedLogs;
   } catch (err) {
-    console.error('Error fetching download audits:', err);
+    logger.error('Error fetching download audits:', err);
     return [];
   }
 };
@@ -2032,7 +2032,7 @@ export const addServiceProvider = async (sp: Partial<ServiceProvider>): Promise<
     .single();
 
   if (error) {
-    console.error("Error adding service provider", error);
+    logger.error("Error adding service provider", error);
     return { success: false, error: error.message };
   }
   return { success: true, id: data.id };
@@ -2046,7 +2046,7 @@ export const deleteServiceProvider = async (id: string): Promise<{ success: bool
     .eq('id', id);
 
   if (error) {
-    console.error("Error deleting service provider", error);
+    logger.error("Error deleting service provider", error);
     return { success: false, error: error.message };
   }
   return { success: true };
@@ -2088,7 +2088,7 @@ export const linkTechnicianToServiceProvider = async (technicianId: string, serv
     .eq('technician_id', technicianId);
 
   if (deleteError) {
-    console.error("Error unlinking previous EPS", deleteError);
+    logger.error("Error unlinking previous EPS", deleteError);
   }
 
   const { error } = await supabase
@@ -2100,7 +2100,7 @@ export const linkTechnicianToServiceProvider = async (technicianId: string, serv
     });
 
   if (error) {
-    console.error("Error linking technician to service provider", error);
+    logger.error("Error linking technician to service provider", error);
     return { success: false, error: error.message };
   }
   return { success: true };
@@ -2115,7 +2115,7 @@ export const unlinkTechnicianFromServiceProvider = async (technicianId: string, 
     .eq('service_provider_id', serviceProviderId);
 
   if (error) {
-    console.error("Error unlinking technician from service provider", error);
+    logger.error("Error unlinking technician from service provider", error);
     return { success: false, error: error.message };
   }
   return { success: true };
@@ -2161,7 +2161,7 @@ export const linkCompanyToServiceProvider = async (companyId: string, servicePro
     }, { onConflict: 'company_id,service_provider_id' });
 
   if (error) {
-    console.error("Error linking company to service provider", error);
+    logger.error("Error linking company to service provider", error);
     return { success: false, error: error.message };
   }
   return { success: true };
@@ -2176,7 +2176,7 @@ export const unlinkCompanyFromServiceProvider = async (companyId: string, servic
     .eq('service_provider_id', serviceProviderId);
 
   if (error) {
-    console.error("Error unlinking company from service provider", error);
+    logger.error("Error unlinking company from service provider", error);
     return { success: false, error: error.message };
   }
   return { success: true };
@@ -2263,7 +2263,7 @@ export const updateServiceProvider = async (id: string, payload: Partial<Service
     .eq('id', id);
 
   if (error) {
-    console.error("Error updating service provider", error);
+    logger.error("Error updating service provider", error);
     return { success: false, error: error.message };
   }
   return { success: true };
@@ -2281,7 +2281,7 @@ export const getSupplierPortals = async (): Promise<SupplierPortal[]> => {
     .order('name');
 
   if (error) {
-    console.error("Error fetching supplier portals", error);
+    logger.error("Error fetching supplier portals", error);
     return [];
   }
 

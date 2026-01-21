@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background: Full Bleed Squircle (almost filling the box) -->
+  <rect width="512" height="512" rx="120" fill="#020617" />
+  
+  <!-- Icon: MAXIMIZED Shield. Scaled up to touch edges. -->
+  <!-- Center point is 256, 256. Scaling 1.4x -->
+  <g transform="translate(256 256) scale(1.45) translate(-256 -256)">
+    <!-- Electric Blue Shield -->
+    <path d="M256 85 C256 85 410 115 410 240 C410 360 256 460 256 460 C256 460 102 360 102 240 C102 115 256 85 256 85 Z" fill="#38bdf8" />
+    
+    <!-- White Checkmark (Thicker stroke for small sizes) -->
+    <path d="M180 250 L230 300 L330 200" fill="none" stroke="#ffffff" stroke-width="60" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+</svg>

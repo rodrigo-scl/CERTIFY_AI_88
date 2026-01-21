@@ -1,7 +1,10 @@
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signIn } from '../services/authService';
 import { Lock, Mail, Loader2, ShieldCheck } from 'lucide-react';
+import { supabase } from '../services/supabaseClient';
+import { ChangePasswordModal } from '../components/ChangePasswordModal';
 
 export const Login = () => {
   const navigate = useNavigate();
@@ -9,6 +12,9 @@ export const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Estado para modal de cambio de contraseña
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   // Rodrigo Osorio v0.17 - Capas de seguridad adicionales
   const [attempts, setAttempts] = useState(0);
@@ -41,9 +47,19 @@ export const Login = () => {
     try {
       // Trim email to remove accidental whitespace from copy-paste
       await signIn(email.trim(), password);
+
       // Reset attempts on success
       setAttempts(0);
       setLockoutTime(null);
+
+      // Verificación de "Forzar Cambio de Contraseña"
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.user_metadata?.must_change_password) {
+        setShowChangePassword(true);
+        setLoading(false); // Stop loading, show modal
+        return; // Detener navegación
+      }
+
       navigate('/');
     } catch (err: any) {
       // Rodrigo Osorio v0.17 - Mantenemos logs limpios y seguros
@@ -62,13 +78,22 @@ export const Login = () => {
           setError('Error de conexión. Intente más tarde.');
         }
       }
-    } finally {
       setLoading(false);
     }
   };
 
+  const handleChangePasswordSuccess = () => {
+    setShowChangePassword(false);
+    navigate('/');
+  };
+
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+      {/* Modal de Cambio de Contraseña Obligatorio */}
+      {showChangePassword && (
+        <ChangePasswordModal onSuccess={handleChangePasswordSuccess} />
+      )}
+
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-500">
         <div className="p-8 bg-brand-600 text-center relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-white/20"></div>

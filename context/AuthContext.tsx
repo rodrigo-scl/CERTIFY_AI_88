@@ -36,7 +36,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Enriquecer con datos de app_users (timeout 3s para evitar bloqueos)
     try {
-      // Usar Promise.all para cargar perfil y sucursales en paralelo
       const queryPromise = supabase
         .from('app_users')
         .select('*')
@@ -57,29 +56,42 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         timeoutPromise
       ]) as any;
 
-      if (result?.data && !result?.error) {
+      if (result?.error) {
+        logger.error('Error fetching user profile from database:', result.error);
+      }
+
+      if (result?.data) {
         baseProfile.name = result.data.name || baseProfile.name;
         baseProfile.role = result.data.role || baseProfile.role;
         baseProfile.status = result.data.status || 'ACTIVE';
-        baseProfile.id = result.data.id || baseProfile.id; // Asegurar que usamos el ID de la tabla app_users si es distinto
+        baseProfile.id = result.data.id || baseProfile.id;
       }
 
       if (branchesResult?.data && !branchesResult?.error) {
         baseProfile.assignedBranchIds = branchesResult.data.map((b: any) => b.branch_id);
       }
 
-      // Rodrigo Osorio v1.0 - Cargar Permisos Dinámicos
-      const { data: permData } = await supabase
+      // Cargar Permisos Dinámicos
+      const { data: permData, error: permError } = await supabase
         .from('role_permissions')
         .select('permission_key')
         .eq('role_id', baseProfile.role)
         .eq('enabled', true);
 
+      if (permError) {
+        logger.error('Error fetching role permissions:', permError);
+      }
+
       if (permData) {
         userPerms = permData.map(p => p.permission_key);
       }
-    } catch {
-      // Si falla o timeout, continúa con perfil base
+
+      // Marcar como perfil verificado (no degradado)
+      (baseProfile as any)._isFullProfile = true;
+
+    } catch (err: any) {
+      logger.error('Profile enrichment failed (using base fallback):', err);
+      (baseProfile as any)._isFullProfile = false;
     }
 
     return { profile: baseProfile, perms: userPerms };
@@ -93,6 +105,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         email: session.user.email,
         user_metadata: session.user.user_metadata
       });
+
+      // RESILIENCIA: No aplicar perfil degradado si ya tenemos uno válido
+      if (!(profile as any)._isFullProfile && user) {
+        logger.warn('Background refresh failed. Keeping current profile to avoid role downgrade.');
+        return;
+      }
+
       setUser(profile);
       setPermissions(perms);
     } else {
@@ -131,12 +150,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setLoading(false);
       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
         if (session?.user) {
-          setLoading(true);
           const { profile, perms } = await fetchProfile({
             id: session.user.id,
             email: session.user.email,
             user_metadata: session.user.user_metadata
           });
+
+          // Solo actualizar si el perfil es el principal o si el fetch fue exitoso
+          if (!(profile as any)._isFullProfile && user && event === 'TOKEN_REFRESHED') {
+            logger.warn('Token refreshed but profile fetch failed. Maintaining previous security context.');
+            return;
+          }
+
           setUser(profile);
           setPermissions(perms);
           setLoading(false);

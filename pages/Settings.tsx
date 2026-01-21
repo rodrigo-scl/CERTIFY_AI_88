@@ -36,16 +36,40 @@ const UsersSettings = () => {
     e.preventDefault();
     if (!newUser.email) return;
     setLoading(true);
-    await addUser(newUser);
-    setUsers(await getUsers());
-    setNewUser({
-      name: '',
-      email: '',
-      role: 'Supervisor',
-      password: 'tempPassword123!',
-      assignedBranchIds: []
-    });
-    setLoading(false);
+
+    try {
+      // Usar Edge Function segura para crear usuario en Auth + Base de Datos
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        body: newUser
+      });
+
+      if (error) {
+        // Intentar parsear el mensaje de error del body si existe
+        const msg = error.message || 'Error desconocido';
+        throw new Error(msg);
+      }
+
+      // Si la función retorna error interno (ej: 403 pero con json de error)
+      if (data && data.error) {
+        throw new Error(data.error);
+      }
+
+      alert(`Usuario ${newUser.email} creado exitosamente.\n\nPuede iniciar sesión con la contraseña temporal: ${newUser.password}`);
+
+      setUsers(await getUsers());
+      setNewUser({
+        name: '',
+        email: '',
+        role: 'Supervisor',
+        password: 'tempPassword123!',
+        assignedBranchIds: []
+      });
+    } catch (err: any) {
+      console.error('Error creating user:', err);
+      alert('Error al crear usuario: ' + (err.message || 'Verifique que tiene permisos y la función está desplegada.'));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleUpdateBranches = async (userId: string, branchIds: string[]) => {

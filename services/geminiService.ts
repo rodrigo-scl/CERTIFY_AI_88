@@ -254,13 +254,16 @@ export const sendMessageToAssistant = async (message: string, contextData?: any)
 
       // Si la función no existe, dar instrucciones
       if (error.message?.includes('not found') || error.message?.includes('404')) {
-        return `La función Certify AI no está configurada. 
+        return {
+          answer: `La función Certify AI no está configurada. 
 
 Para activarla:
 1. Ve al Dashboard de Supabase
 2. Navega a Edge Functions
 3. Despliega la función 'certify-ai'
-4. Configura el secret GEMINI_API_KEY`;
+4. Configura el secret GEMINI_API_KEY`,
+          suggestions: []
+        };
       }
 
       throw error;
