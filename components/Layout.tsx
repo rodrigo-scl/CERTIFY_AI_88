@@ -519,7 +519,20 @@ export const Layout = ({ children }: LayoutProps) => {
             </button>
             <div className="flex flex-col">
               <h2 className="text-xl font-bold text-slate-900 tracking-tight capitalize hidden sm:block">
-                {location.pathname === '/' ? 'Resumen General' : location.pathname.split('/')[1]}
+                {(() => {
+                  if (location.pathname === '/') return 'Resumen General';
+                  const primaryPath = location.pathname.split('/')[1];
+                  const titleMap: Record<string, string> = {
+                    'technicians': 'Técnicos',
+                    'companies': 'Empresas',
+                    'branches': 'Sucursales',
+                    'settings': 'Configuración',
+                    'parameters': 'Parámetros',
+                    'availability': 'Disponibilidad',
+                    'audit': 'Auditoría'
+                  };
+                  return titleMap[primaryPath] || primaryPath;
+                })()}
               </h2>
               <p className="text-xs text-slate-400 font-medium hidden sm:block">
                 {new Date().toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}

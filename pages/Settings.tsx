@@ -1,7 +1,7 @@
 // Rodrigo Osorio v0.10 - Simplified Settings focusing on Users/System/Security
 import React, { useState, useEffect } from 'react';
 import {
-  Shield, Plus, Save, Trash2, X, Edit2, User as UserIcon, Server, Lock, AlertTriangle, RefreshCw, Activity, Loader2, Building2, Bot, Sparkles, ExternalLink
+  Shield, Plus, Save, Trash2, X, Edit2, User as UserIcon, Server, Lock, AlertTriangle, RefreshCw, Activity, Loader2, Building2, Bot, Sparkles, ExternalLink, MoreVertical, Ban, KeyRound
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import {
@@ -101,6 +101,35 @@ const UsersSettings = () => {
     }
   };
 
+  const handleAdminAction = async (action: 'block' | 'unblock' | 'reset_password' | 'delete', targetUser: AppUser) => {
+    if (!confirm(`¿Estás seguro de continuar con esta acción: ${action.toUpperCase()} para ${targetUser.email}?`)) return;
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-action', {
+        body: { action, targetUserId: targetUser.id }
+      });
+
+      if (error) throw new Error(error.message || 'Error en Edge Function');
+      if (data && data.error) throw new Error(data.error);
+
+      if (action === 'reset_password' && data.newPassword) {
+        alert(`Contraseña reseteada exitosamente.\n\nNueva contraseña temporal: ${data.newPassword}`);
+      } else {
+        alert('Acción completada exitosamente.');
+      }
+
+      // Recargar lista
+      setUsers(await getUsers());
+
+    } catch (err: any) {
+      console.error('Admin Action Error:', err);
+      alert('Error: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 animate-in fade-in">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -164,20 +193,65 @@ const UsersSettings = () => {
           <h3 className="text-lg font-bold text-slate-900 mb-4">Usuarios Activos</h3>
           <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
             {users.map(u => (
-              <div key={u.id} className="p-4 border border-slate-100 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors">
+              <div key={u.id} className={`p-4 border rounded-lg transition-colors relative group
+                ${u.status === 'BLOCKED' ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}
+              >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center text-slate-500 font-bold overflow-hidden">
-                      <img src={`https://ui-avatars.com/api/?name=${u.name}&background=random`} alt={u.name} />
+                    <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center text-slate-500 font-bold overflow-hidden relative">
+                      <img src={`https://ui-avatars.com/api/?name=${u.name}&background=random`} alt={u.name} className={u.status === 'BLOCKED' ? 'opacity-50 grayscale' : ''} />
+                      {u.status === 'BLOCKED' && <div className="absolute inset-0 flex items-center justify-center bg-black/20"><Lock size={16} className="text-white" /></div>}
                     </div>
                     <div>
-                      <div className="font-semibold text-slate-900">{u.name}</div>
-                      <div className="text-xs text-slate-50">{u.email}</div>
+                      <div className="font-semibold text-slate-900 flex items-center gap-2">
+                        {u.name}
+                        {u.status === 'BLOCKED' && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">Bloqueado</span>}
+                      </div>
+                      <div className="text-xs text-slate-500">{u.email}</div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <span className="inline-block px-2 py-1 bg-indigo-50 text-indigo-700 text-xs rounded font-medium mb-1">{u.role}</span>
-                    <div className="text-xs text-slate-400">Último acceso: {u.lastLogin || 'Nunca'}</div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right hidden sm:block">
+                      <span className="inline-block px-2 py-1 bg-indigo-50 text-indigo-700 text-xs rounded font-medium mb-1">{u.role}</span>
+                      <div className="text-xs text-slate-400">Último acceso: {u.lastLogin || 'Nunca'}</div>
+                    </div>
+
+                    {/* ACTIONS MENU */}
+                    <div className="relative group/menu">
+                      <button className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-600 transition-colors">
+                        <MoreVertical size={18} />
+                      </button>
+
+                      {/* Only show menu if NOT Superadmin (or if you are superadmin, but rules say nobody touches superadmin) */}
+                      {u.role !== 'Superadministrador' && (
+                        <div className="absolute right-0 top-8 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-50 hidden group-hover/menu:block animate-in fade-in zoom-in-95 origin-top-right">
+                          <div className="p-1">
+                            <button
+                              onClick={() => handleAdminAction(u.status === 'BLOCKED' ? 'unblock' : 'block', u)}
+                              className="w-full text-left px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 rounded-lg flex items-center gap-2"
+                            >
+                              {u.status === 'BLOCKED' ? <><Shield size={14} className="text-green-600" /> Desbloquear Usuario</> : <><Ban size={14} className="text-amber-600" /> Bloquear Acceso</>}
+                            </button>
+
+                            <button
+                              onClick={() => handleAdminAction('reset_password', u)}
+                              className="w-full text-left px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 rounded-lg flex items-center gap-2"
+                            >
+                              <KeyRound size={14} className="text-blue-600" /> Resetear Contraseña
+                            </button>
+
+                            <div className="h-px bg-slate-100 my-1"></div>
+
+                            <button
+                              onClick={() => handleAdminAction('delete', u)}
+                              className="w-full text-left px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
+                            >
+                              <Trash2 size={14} /> Eliminar Cuenta
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 

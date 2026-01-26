@@ -85,8 +85,13 @@ export const Availability = () => {
     const [branchFilter, setBranchFilter] = useState<string>('all');
     const [companyFilter, setCompanyFilter] = useState<string>('all');
     const [technicianFilter, setTechnicianFilter] = useState<string>('all');
+    const [statusFilter, setStatusFilter] = useState<AvailabilityStatus | 'all'>('all');
     const [showLegend, setShowLegend] = useState(false);
     const [holidays, setHolidays] = useState<Holiday[]>([]);
+
+    // Paginación
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 50;
 
     // Cargar datos
     useEffect(() => {
@@ -234,14 +239,36 @@ export const Availability = () => {
         });
     }, [technicians, companies, absences, credentialExpiries, dateRange, branchFilter, companyFilter, technicianFilter]);
 
-    // Calcular totales por día
+    // Filtrar por estado (después del cálculo de disponibilidad)
+    const filteredAvailabilityData = useMemo(() => {
+        if (statusFilter === 'all') return availabilityData;
+
+        // Filtrar técnicos que tengan al menos un día con el estado seleccionado
+        return availabilityData.filter(tech =>
+            Object.values(tech.dailyStatus).some(status => status === statusFilter)
+        );
+    }, [availabilityData, statusFilter]);
+
+    // Calcular totales por día (usando datos filtrados)
     const dailyTotals = useMemo(() => {
         const totals: { [date: string]: number } = {};
         dateRange.forEach(date => {
-            totals[date] = availabilityData.filter(t => t.dailyStatus[date] === '1').length;
+            totals[date] = filteredAvailabilityData.filter(t => t.dailyStatus[date] === '1').length;
         });
         return totals;
-    }, [availabilityData, dateRange]);
+    }, [filteredAvailabilityData, dateRange]);
+
+    // Paginación
+    const totalPages = Math.ceil(filteredAvailabilityData.length / itemsPerPage);
+    const paginatedData = filteredAvailabilityData.slice(
+        (currentPage - 1) * itemsPerPage,
+        currentPage * itemsPerPage
+    );
+
+    // Resetear página cuando cambian los filtros
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [branchFilter, companyFilter, technicianFilter, statusFilter]);
 
     // Exportar a CSV - Rodrigo Osorio v0.2: Agregada compatibilidad con Excel (BOM) y sanitización de comas
     const exportToCSV = useCallback(() => {
@@ -261,7 +288,7 @@ export const Availability = () => {
             ...dateRange.map(d => sanitize(`${formatDay(d)} ${formatMonth(d)}`))
         ];
 
-        const rows = availabilityData.map(t => [
+        const rows = filteredAvailabilityData.map(t => [
             sanitize(t.technicianName),
             sanitize(t.branchName),
             sanitize(t.companyNames.join('; ')),
@@ -317,12 +344,12 @@ export const Availability = () => {
     }
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
+        <div className="space-y-3 animate-in fade-in duration-500">
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div>
                     <h1 className="text-xl font-black text-slate-900">Disponibilidad Operativa</h1>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Proyección de capacidad por técnico</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Capacidad por técnico</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <button
@@ -334,48 +361,63 @@ export const Availability = () => {
                 </div>
             </div>
 
-            {/* Leyenda - Siempre Visible */}
+            {/* Leyenda - Ahora clicable para filtrar */}
             <div className="bg-white rounded-xl p-4 border border-slate-100">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Estados de Disponibilidad</p>
+                <div className="flex items-center justify-between mb-3">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Estados de Disponibilidad</p>
+                    {statusFilter !== 'all' && (
+                        <button
+                            onClick={() => setStatusFilter('all')}
+                            className="text-xs text-brand-600 hover:text-brand-700 font-bold underline"
+                        >
+                            Limpiar filtro
+                        </button>
+                    )}
+                </div>
                 <div className="flex flex-wrap gap-3">
                     {STATUS_LEGEND.map(s => (
-                        <div key={s.code} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${s.color}`}>
+                        <button
+                            key={s.code}
+                            onClick={() => setStatusFilter(s.code)}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-all hover:ring-2 hover:ring-brand-500 hover:scale-105 ${s.color} ${statusFilter === s.code ? 'ring-2 ring-brand-600 font-black shadow-lg' : ''
+                                }`}
+                        >
                             <span className="font-black">{s.code}</span>
                             <span className="font-medium opacity-80">=</span>
                             <span className="font-medium">{s.label}</span>
-                        </div>
+                        </button>
                     ))}
                 </div>
             </div>
 
-            {/* Filtros */}
-            <div className="bg-white rounded-xl p-4 border border-slate-100">
-                <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex items-center gap-2">
-                        <Filter size={14} className="text-slate-400" />
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Filtros</span>
+            {/* Filtros - Compactos */}
+            <div className="bg-white rounded-xl p-2 border border-slate-100">
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-1">
+                        <Filter size={12} className="text-slate-400" />
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Filtros</span>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                        <Calendar size={14} className="text-slate-400" />
+                    <div className="flex items-center gap-1">
+                        <Calendar size={12} className="text-slate-400" />
                         <select
                             value={periodDays}
                             onChange={(e) => setPeriodDays(Number(e.target.value) as any)}
-                            className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+                            className="px-2 py-1 border border-slate-200 rounded-lg text-[11px] font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
                         >
-                            <option value={15}>15 días</option>
-                            <option value={30}>30 días</option>
-                            <option value={60}>60 días</option>
-                            <option value={90}>90 días</option>
+                            <option value={15}>15 d</option>
+                            <option value={30}>30 d</option>
+                            <option value={60}>60 d</option>
+                            <option value={90}>90 d</option>
                         </select>
                     </div>
 
                     <select
                         value={branchFilter}
                         onChange={(e) => setBranchFilter(e.target.value)}
-                        className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+                        className="px-2 py-1 border border-slate-200 rounded-lg text-[11px] focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
                     >
-                        <option value="all">Todas las Sucursales</option>
+                        <option value="all">Sucursal: Todas</option>
                         {branches.map(b => (
                             <option key={b.id} value={b.id}>{b.name}</option>
                         ))}
@@ -384,9 +426,9 @@ export const Availability = () => {
                     <select
                         value={companyFilter}
                         onChange={(e) => setCompanyFilter(e.target.value)}
-                        className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+                        className="px-2 py-1 border border-slate-200 rounded-lg text-[11px] focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
                     >
-                        <option value="all">Todas las Empresas</option>
+                        <option value="all">Empresa: Todas</option>
                         {companies.map(c => (
                             <option key={c.id} value={c.id}>{c.name}</option>
                         ))}
@@ -395,9 +437,9 @@ export const Availability = () => {
                     <select
                         value={technicianFilter}
                         onChange={(e) => setTechnicianFilter(e.target.value)}
-                        className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+                        className="px-2 py-1 border border-slate-200 rounded-lg text-[11px] focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white max-w-[150px]"
                     >
-                        <option value="all">Todos los Técnicos</option>
+                        <option value="all">Técnico: Todos</option>
                         {technicians.map(t => (
                             <option key={t.id} value={t.id}>{t.name}</option>
                         ))}
@@ -405,21 +447,42 @@ export const Availability = () => {
                 </div>
             </div>
 
-            {/* Tabla de Disponibilidad */}
+            {/* Tabla de Disponibilidad con scrollbar visible */}
             <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto custom-scrollbar" style={{
+                    scrollbarWidth: 'auto',
+                    scrollbarColor: '#cbd5e1 #f1f5f9'
+                }}>
+                    <style>{`
+                        .custom-scrollbar::-webkit-scrollbar {
+                            height: 12px;
+                            width: 12px;
+                        }
+                        .custom-scrollbar::-webkit-scrollbar-track {
+                            background: #f1f5f9;
+                            border-radius: 6px;
+                        }
+                        .custom-scrollbar::-webkit-scrollbar-thumb {
+                            background: #cbd5e1;
+                            border-radius: 6px;
+                            border: 2px solid #f1f5f9;
+                        }
+                        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                            background: #94a3b8;
+                        }
+                    `}</style>
                     <table className="w-full text-sm">
                         <thead>
                             {/* Fila de indicadores H/F/FDS - Rodrigo Osorio v0.16 */}
                             <tr className="bg-slate-100 border-b border-slate-200">
-                                <th className="sticky left-0 bg-slate-100 z-10 px-4 py-1"></th>
-                                <th className="px-3 py-1"></th>
-                                <th className="px-3 py-1"></th>
+                                <th className="sticky left-0 bg-slate-100 z-10 px-2 py-1"></th>
+                                <th className="px-0.5 py-1"></th>
+                                <th className="px-0.5 py-1"></th>
                                 {dateRange.map(date => {
                                     const type = getDayType(date);
                                     return (
-                                        <th key={`type-${date}`} className="px-2 py-1 text-center">
-                                            <span className={`text-[9px] font-black ${type === 'F' ? 'text-red-600 bg-red-50 px-1.5 py-0.5 rounded' :
+                                        <th key={`type-${date}`} className="px-0.5 py-1 text-center">
+                                            <span className={`text-[9px] font-black ${type === 'F' ? 'text-red-600 bg-red-50 px-1 py-0.5 rounded' :
                                                 type === 'FDS' ? 'text-slate-400' :
                                                     'text-emerald-600'
                                                 }`}>
@@ -431,13 +494,13 @@ export const Availability = () => {
                             </tr>
                             {/* Fila de fechas */}
                             <tr className="bg-slate-50 border-b border-slate-100">
-                                <th className="sticky left-0 bg-slate-50 z-10 px-4 py-3 text-left text-[9px] font-black text-slate-500 uppercase tracking-widest min-w-[160px]">
+                                <th className="sticky left-0 bg-slate-50 z-10 px-2 py-1 text-left text-[8px] font-black text-slate-500 uppercase tracking-widest min-w-[180px]">
                                     Técnico
                                 </th>
-                                <th className="px-3 py-3 text-left text-[9px] font-black text-slate-500 uppercase tracking-widest min-w-[100px]">
+                                <th className="px-0.5 py-1 text-left text-[8px] font-black text-slate-500 uppercase tracking-widest min-w-[70px]">
                                     Sucursal
                                 </th>
-                                <th className="px-3 py-3 text-left text-[9px] font-black text-slate-500 uppercase tracking-widest min-w-[150px]">
+                                <th className="px-0.5 py-1 text-left text-[8px] font-black text-slate-500 uppercase tracking-widest min-w-[90px]">
                                     Empresas
                                 </th>
                                 {dateRange.map(date => {
@@ -449,16 +512,13 @@ export const Availability = () => {
                                     return (
                                         <th
                                             key={date}
-                                            className={`px-2 py-3 text-center text-[8px] font-black uppercase tracking-tight min-w-[50px] ${isWeekend || isHoliday ? 'bg-slate-100' : ''}`}
+                                            className={`px-0 py-1 text-center text-[7px] font-black uppercase tracking-tight min-w-[35px] ${isWeekend || isHoliday ? 'bg-slate-100' : ''}`}
                                         >
                                             <div className={isRedDay ? 'text-red-500' : isWeekend ? 'text-slate-400' : 'text-slate-500'}>
                                                 {dayOfWeek}
                                             </div>
-                                            <div className={`text-[11px] font-black ${isRedDay ? 'text-red-500' : 'text-slate-700'}`}>
+                                            <div className={`text-[10px] font-black ${isRedDay ? 'text-red-500' : 'text-slate-700'}`}>
                                                 {formatDay(date)}
-                                            </div>
-                                            <div className={`text-[8px] font-bold ${isRedDay ? 'text-red-400' : 'text-slate-400'}`}>
-                                                {formatMonth(date)}
                                             </div>
                                         </th>
                                     );
@@ -466,7 +526,7 @@ export const Availability = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                            {availabilityData.length === 0 ? (
+                            {paginatedData.length === 0 ? (
                                 <tr>
                                     <td colSpan={3 + dateRange.length} className="px-4 py-12 text-center text-sm text-slate-400">
                                         No hay técnicos que coincidan con los filtros seleccionados
@@ -474,26 +534,26 @@ export const Availability = () => {
                                 </tr>
                             ) : (
                                 <>
-                                    {availabilityData.map(tech => (
+                                    {paginatedData.map(tech => (
                                         <tr key={tech.technicianId} className="hover:bg-slate-50/50 transition-colors">
-                                            <td className="sticky left-0 bg-white z-10 px-4 py-3 font-bold text-slate-700">
+                                            <td className="sticky left-0 bg-white z-10 px-2 py-0.5 font-bold text-slate-700 text-[11px] leading-tight whitespace-nowrap">
                                                 {tech.technicianName}
                                             </td>
-                                            <td className="px-3 py-3 text-slate-500 text-xs">
+                                            <td className="px-1 py-0.5 text-slate-500 text-[9px] leading-tight">
                                                 {tech.branchName}
                                             </td>
-                                            <td className="px-3 py-3 text-slate-500 text-xs truncate max-w-[150px]" title={tech.companyNames.join(', ')}>
+                                            <td className="px-1 py-0.5 text-slate-500 text-[9px] leading-tight truncate max-w-[90px]" title={tech.companyNames.join(', ')}>
                                                 {tech.companyNames.length > 0 ? tech.companyNames.join(', ') : '-'}
                                             </td>
                                             {dateRange.map(date => (
                                                 <td
                                                     key={date}
-                                                    className={`px-1 py-3 text-center ${getDayOfWeek(date) === 'SAB' || getDayOfWeek(date) === 'DOM'
+                                                    className={`px-0.5 py-0.5 text-center ${getDayOfWeek(date) === 'SAB' || getDayOfWeek(date) === 'DOM'
                                                         ? 'bg-slate-50'
                                                         : ''
                                                         }`}
                                                 >
-                                                    <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black ${getStatusStyle(tech.dailyStatus[date])}`}>
+                                                    <span className={`inline-block px-1 py-0 rounded text-[9px] font-black ${getStatusStyle(tech.dailyStatus[date])}`}>
                                                         {tech.dailyStatus[date]}
                                                     </span>
                                                 </td>
@@ -501,22 +561,22 @@ export const Availability = () => {
                                         </tr>
                                     ))}
 
-                                    {/* Fila de Totales */}
+                                    {/* Fila de Totales - Compacta */}
                                     <tr className="bg-slate-50 border-t-2 border-slate-200 font-black">
-                                        <td className="sticky left-0 bg-slate-50 z-10 px-4 py-3 text-slate-700 text-xs uppercase tracking-widest">
-                                            Total Disponibles
+                                        <td className="sticky left-0 bg-slate-50 z-10 px-2 py-1 text-slate-700 text-[9px] uppercase tracking-widest">
+                                            TOTAL
                                         </td>
-                                        <td className="px-3 py-3"></td>
-                                        <td className="px-3 py-3"></td>
+                                        <td className="px-1 py-1"></td>
+                                        <td className="px-1 py-1"></td>
                                         {dateRange.map(date => (
                                             <td
                                                 key={date}
-                                                className={`px-1 py-3 text-center ${getDayOfWeek(date) === 'SAB' || getDayOfWeek(date) === 'DOM'
+                                                className={`px-0.5 py-1 text-center ${getDayOfWeek(date) === 'SAB' || getDayOfWeek(date) === 'DOM'
                                                     ? 'bg-slate-100'
                                                     : ''
                                                     }`}
                                             >
-                                                <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black ${dailyTotals[date] === 0 ? 'bg-red-100 text-red-700' :
+                                                <span className={`inline-block px-1 py-0 rounded text-[9px] font-black ${dailyTotals[date] === 0 ? 'bg-red-100 text-red-700' :
                                                     dailyTotals[date] <= 2 ? 'bg-amber-100 text-amber-700' :
                                                         'bg-emerald-100 text-emerald-700'
                                                     }`}>
@@ -530,6 +590,48 @@ export const Availability = () => {
                         </tbody>
                     </table>
                 </div>
+
+                {/* Controles de paginación */}
+                {totalPages > 1 && (
+                    <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between bg-slate-50">
+                        <div className="text-xs text-slate-500 font-medium">
+                            Mostrando {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, filteredAvailabilityData.length)} de {filteredAvailabilityData.length} técnicos
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setCurrentPage(1)}
+                                disabled={currentPage === 1}
+                                className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                            >
+                                « Primera
+                            </button>
+                            <button
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                                className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                            >
+                                ‹ Anterior
+                            </button>
+                            <span className="px-4 py-1.5 text-xs font-bold text-slate-700">
+                                Página {currentPage} de {totalPages}
+                            </span>
+                            <button
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages}
+                                className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                            >
+                                Siguiente ›
+                            </button>
+                            <button
+                                onClick={() => setCurrentPage(totalPages)}
+                                disabled={currentPage === totalPages}
+                                className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                            >
+                                Última »
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

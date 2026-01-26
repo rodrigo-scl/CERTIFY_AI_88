@@ -62,30 +62,68 @@ export const BulkTechnicianUploadModal = ({
     };
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        console.log('[BULK UPLOAD] handleFileUpload triggered');
         const file = e.target.files?.[0];
-        if (!file) return;
+
+        if (!file) {
+            console.log('[BULK UPLOAD] No file selected');
+            return;
+        }
+
+        console.log('[BULK UPLOAD] File selected:', file.name, file.size, 'bytes');
 
         const reader = new FileReader();
         reader.onload = async (event) => {
+            console.log('[BULK UPLOAD] File read complete');
             const content = event.target?.result as string;
             const lines = content.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+            console.log('[BULK UPLOAD] Total lines:', lines.length);
+
+            // Show first 3 lines for debugging
+            console.log('[BULK UPLOAD] First 3 lines:', lines.slice(0, 3));
+
+            // Auto-detect separator: check if header has more semicolons than commas
+            const headerLine = lines[0] || '';
+            const separator = headerLine.split(';').length > headerLine.split(',').length ? ';' : ',';
+            console.log('[BULK UPLOAD] Detected separator:', separator === ';' ? 'semicolon' : 'comma');
 
             // Skip header
             const dataLines = lines.slice(1);
             const parsed: ParsedTech[] = dataLines.map(line => {
-                const parts = line.split(',').map(p => p.trim());
+                const parts = line.split(separator).map(p => p.trim().replace(/^["']|["']$/g, '')); // Remove quotes
                 return {
                     nombre: parts[0] || '',
                     rut: parts[1] || '',
                     email: parts[2] || '',
                     telefono: parts[3] || '',
-                    cargo: '', // Se ignorará el del CSV
+                    cargo: '', // Se ignorará del CSV
                     status: 'pending'
                 };
             }).filter(t => t.nombre && t.rut);
 
+            console.log('[BULK UPLOAD] Parsed technicians:', parsed.length);
+
+            // Show first parsed technician for debugging
+            if (parsed.length > 0) {
+                console.log('[BULK UPLOAD] First parsed technician:', parsed[0]);
+            }
+
             if (parsed.length === 0) {
-                alert('El archivo no contiene datos válidos o está vacío.');
+                const errorMsg = `⚠️ No se pudieron extraer técnicos del archivo.\n\n` +
+                    `📋 Información detectada:\n` +
+                    `• Líneas totales: ${lines.length}\n` +
+                    `• Separador detectado: ${separator === ';' ? 'Punto y coma (;)' : 'Coma (,)'}\n` +
+                    `• Formato esperado: Nombre${separator}RUT${separator}Email${separator}Teléfono\n\n` +
+                    `🔍 Primera línea del archivo:\n"${lines[0].substring(0, 100)}${lines[0].length > 100 ? '...' : ''}"\n\n` +
+                    `💡 Posibles causas:\n` +
+                    `• Las columnas no tienen los nombres correctos\n` +
+                    `• Faltan datos obligatorios (Nombre o RUT)\n` +
+                    `• El separador es incorrecto\n\n` +
+                    `Revisa la consola del navegador (F12) para más detalles.`;
+
+                alert(errorMsg);
+                // Reset input
+                if (fileInputRef.current) fileInputRef.current.value = '';
                 return;
             }
 
@@ -97,6 +135,7 @@ export const BulkTechnicianUploadModal = ({
             try {
                 const ruts = parsed.map(t => t.rut);
                 const existingRuts = await checkRutsExist(ruts);
+                console.log('[BULK UPLOAD] Existing RUTs found:', existingRuts.length);
 
                 setTechnicians(prev => prev.map(t => {
                     if (existingRuts.includes(t.rut)) {
@@ -108,11 +147,20 @@ export const BulkTechnicianUploadModal = ({
                     return { ...t, status: 'valid' };
                 }));
             } catch (err) {
-                console.error(err);
+                console.error('[BULK UPLOAD] Error checking RUTs:', err);
             } finally {
                 setIsChecking(false);
             }
         };
+
+        reader.onerror = (error) => {
+            console.error('[BULK UPLOAD] FileReader error:', error);
+            alert('Error al leer el archivo. Por favor intenta nuevamente.');
+            // Reset input
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        };
+
+        console.log('[BULK UPLOAD] Starting to read file as text');
         reader.readAsText(file);
     };
 
@@ -369,7 +417,10 @@ export const BulkTechnicianUploadModal = ({
 
                             <div className="mt-10 flex gap-4">
                                 <button
-                                    onClick={onClose}
+                                    onClick={() => {
+                                        onSuccess(); // Refresh technicians list
+                                        onClose();
+                                    }}
                                     className="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg active:scale-95"
                                 >
                                     Ver Técnicos

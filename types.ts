@@ -112,6 +112,11 @@ export interface Credential {
   portalCertifiedAt?: string;
   portalCertifiedBy?: string;
   portalCertifiedByName?: string;
+  portalCertifications?: {
+    companyId: string;
+    certifiedAt: string;
+    certifiedByName?: string;
+  }[];
 }
 
 export interface Technician {
@@ -135,6 +140,8 @@ export interface Technician {
   // Computed fields
   complianceScore: number;
   overallStatus: ComplianceStatus;
+  epsNames?: string[];
+  technicianTypeName?: string;
 }
 
 export interface Branch {

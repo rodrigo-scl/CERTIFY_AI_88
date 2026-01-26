@@ -83,18 +83,46 @@ export const recalculateAndSaveTechnicianStatus = async (
     let hasExpiring = false;
     let hasPending = false;
 
+    const isCredentialCertified = (cred: Credential, tech: Technician, companies: Company[]) => {
+      if (cred.status !== ComplianceStatus.VALID && cred.status !== ComplianceStatus.EXPIRING_SOON) return false;
+
+      // Un documento se considera al día solo si está certificado para TODAS las empresas que lo requieren
+      const requiredByCompanies = companies.filter(comp =>
+        tech.companyIds.includes(comp.id) &&
+        comp.requiredDocTypes?.includes(cred.documentTypeId)
+      );
+
+      if (requiredByCompanies.length > 0) {
+        const certifiedCompanyIds = new Set(cred.portalCertifications?.map(pc => pc.companyId) || []);
+        return requiredByCompanies.every(comp => certifiedCompanyIds.has(comp.id));
+      } else {
+        // Si no es requerido por ninguna empresa específica, verificamos certificación global/manual
+        return !!cred.portalCertifiedAt;
+      }
+    };
+
     requiredIdsArray.forEach(reqDocId => {
       const cred = tech.credentials.find(c => c.documentTypeId === reqDocId);
 
       if (!cred) {
         hasMissing = true;
       } else {
-        // Rodrigo Osorio v0.8 - Documentos VALID y EXPIRING_SOON cuentan como cumplimiento
-        if (cred.status === ComplianceStatus.VALID || cred.status === ComplianceStatus.EXPIRING_SOON) validCount++;
+        // Solo cuenta como cumplimiento si el estado de fecha es OK y está certificado en portal
+        const isCertified = isCredentialCertified(cred, tech, companies);
+
+        if (isCertified) {
+          validCount++;
+        }
+
         if (cred.status === ComplianceStatus.EXPIRED) hasExpired = true;
         if (cred.status === ComplianceStatus.MISSING) hasMissing = true;
         if (cred.status === ComplianceStatus.EXPIRING_SOON) hasExpiring = true;
         if (cred.status === ComplianceStatus.PENDING) hasPending = true;
+
+        // Si el archivo está subido pero no certificado, se considera "Pendiente" para el score
+        if (!isCertified && (cred.status === ComplianceStatus.VALID || cred.status === ComplianceStatus.EXPIRING_SOON)) {
+          hasPending = true;
+        }
       }
     });
 
@@ -121,6 +149,11 @@ export const recalculateAndSaveTechnicianStatus = async (
   // Actualizar referencia local
   tech.complianceScore = newScore;
   tech.overallStatus = newStatus;
+
+  // Invalidar caché
+  clearCache(CACHE_KEYS.TECHNICIANS);
+  clearCache(CACHE_KEYS.TECHNICIANS_LIGHT);
+  clearCache(CACHE_KEYS.COMPANIES_LIGHT);
 };
 
 // --- RODRIGO OSORIO v0.13: CUMPLIMIENTO POR EMPRESA ---
@@ -169,7 +202,11 @@ export const calculateTechnicianComplianceForCompany = (
   let validCount = 0;
   requiredDocIds.forEach(docId => {
     const cred = technician.credentials?.find(c => c.documentTypeId === docId);
-    if (cred && (cred.status === ComplianceStatus.VALID || cred.status === ComplianceStatus.EXPIRING_SOON)) {
+
+    // Para cumplimiento por empresa, verificamos si está certificado ESPECIFICAMENTE para esta empresa
+    const isCertifiedForThisCompany = cred?.portalCertifications?.some(pc => pc.companyId === company.id) || !!cred?.portalCertifiedAt;
+
+    if (cred && (cred.status === ComplianceStatus.VALID || cred.status === ComplianceStatus.EXPIRING_SOON) && isCertifiedForThisCompany) {
       validCount++;
     }
   });
@@ -292,6 +329,20 @@ export const getTechnicians = async (branchIds?: string[]): Promise<Technician[]
 
     if (error) { logger.error("Error fetching technicians", error); return []; }
 
+    // 2. Obtener mapeo de EPS (Empresas Prestadoras de Servicio) para todos los técnicos
+    const { data: epsLinks, error: epsError } = await supabase
+      .from('technician_service_providers')
+      .select('technician_id, service_providers(name)')
+      .eq('is_active', true);
+
+    const epsMap: Record<string, string[]> = {};
+    if (!epsError && epsLinks) {
+      epsLinks.forEach((link: any) => {
+        if (!epsMap[link.technician_id]) epsMap[link.technician_id] = [];
+        if (link.service_providers?.name) epsMap[link.technician_id].push(link.service_providers.name);
+      });
+    }
+
     return (data || []).map((item: any) => {
       const t = item.j;
       return {
@@ -305,10 +356,12 @@ export const getTechnicians = async (branchIds?: string[]): Promise<Technician[]
         branchId: t.branch_id,
         technicianTypeId: t.technician_type_id,
         role: t.role || t.technician_types?.name || 'Técnico',
+        technicianTypeName: t.technician_types?.name || 'Técnico',
         isActive: t.is_active,
         complianceScore: t.compliance_score || 0,
         overallStatus: t.overall_status || ComplianceStatus.PENDING,
         avatarUrl: t.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(t.name)}&background=0D8ABC&color=fff`,
+        epsNames: epsMap[t.id] || [],
         companyIds: (t.technician_companies || []).map((tc: any) => tc.company_id),
         isBlocked: (t.technician_companies || []).some((tc: any) => tc.is_blocked),
         credentials: (t.credentials || []).map((c: any) => ({
@@ -322,7 +375,8 @@ export const getTechnicians = async (branchIds?: string[]): Promise<Technician[]
           expiryDate: c.expiry_date,
           portalCertifiedAt: c.portal_certified_at,
           portalCertifiedBy: c.portal_certified_by,
-          portalCertifiedByName: c.portal_certified_by_name
+          portalCertifiedByName: c.portal_certified_by_name,
+          portalCertifications: c.portal_certifications || []
         })),
         createdAt: t.created_at
       };
@@ -349,6 +403,15 @@ export const getTechnicianById = async (id: string): Promise<Technician | undefi
 
   const t = data.j; // El objeto JSON retorna en propiedad 'j'
 
+  // 2. Obtener EPS vinculadas
+  const { data: epsLinks } = await supabase
+    .from('technician_service_providers')
+    .select('service_providers(name)')
+    .eq('technician_id', id)
+    .eq('is_active', true);
+
+  const epsNames = (epsLinks || []).map((link: any) => link.service_providers?.name).filter(Boolean);
+
   return {
     id: t.id,
     name: t.name,
@@ -358,11 +421,13 @@ export const getTechnicianById = async (id: string): Promise<Technician | undefi
     branch: t.branches?.name || '',
     branchId: t.branch_id, // ID para edicion
     role: t.role || t.technician_types?.name || '',
+    technicianTypeName: t.technician_types?.name || 'Técnico',
     technicianTypeId: t.technician_type_id,
     isActive: t.is_active,
     avatarUrl: t.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(t.name)}&background=random`,
     complianceScore: t.compliance_score || 0,
     overallStatus: t.overall_status || ComplianceStatus.PENDING,
+    epsNames,
     companyIds: (t.technician_companies || []).map((tc: any) => tc.company_id),
     blockedCompanyIds: (t.technician_companies || []).filter((tc: any) => tc.is_blocked).map((tc: any) => tc.company_id),
     credentials: (t.credentials || []).map((c: any) => ({
@@ -376,7 +441,8 @@ export const getTechnicianById = async (id: string): Promise<Technician | undefi
       status: c.status,
       portalCertifiedAt: c.portal_certified_at,
       portalCertifiedBy: c.portal_certified_by,
-      portalCertifiedByName: c.portal_certified_by_name
+      portalCertifiedByName: c.portal_certified_by_name,
+      portalCertifications: c.portal_certifications || []
     }))
   };
 };
@@ -427,11 +493,25 @@ export const getTechniciansByCompany = async (companyId: string): Promise<Techni
 // Rodrigo Osorio v0.14 - Soporte para sucursales
 export const getTechniciansLight = async (branchIds?: string[]): Promise<Partial<Technician>[]> => {
   const allTechs = await getCachedOrFetch<any[]>(CACHE_KEYS.TECHNICIANS_LIGHT, async () => {
-    // Usar RPC segura
-    const { data, error } = await supabase.rpc('get_technicians_light_secure');
+    // 1. Obtener datos base desde RPC segura
+    const { data: techs, error } = await supabase.rpc('get_technicians_light_secure');
     if (error) { logger.error("Error fetching technicians light", error); return []; }
 
-    return (data || []).map((item: any) => {
+    // 2. Obtener mapeo de EPS (Empresas Prestadoras de Servicio) para todos los técnicos
+    const { data: epsLinks, error: epsError } = await supabase
+      .from('technician_service_providers')
+      .select('technician_id, service_providers(name)')
+      .eq('is_active', true);
+
+    const epsMap: Record<string, string[]> = {};
+    if (!epsError && epsLinks) {
+      epsLinks.forEach((link: any) => {
+        if (!epsMap[link.technician_id]) epsMap[link.technician_id] = [];
+        if (link.service_providers?.name) epsMap[link.technician_id].push(link.service_providers.name);
+      });
+    }
+
+    return (techs || []).map((item: any) => {
       const t = item.j;
       return {
         id: t.id,
@@ -442,9 +522,11 @@ export const getTechniciansLight = async (branchIds?: string[]): Promise<Partial
         branch: t.branches?.name || 'Sin Asignar',
         branchId: t.branch_id,
         role: t.role || t.technician_types?.name || 'Técnico',
+        technicianTypeName: t.technician_types?.name || 'Técnico',
         overallStatus: t.overall_status || ComplianceStatus.PENDING,
         complianceScore: t.compliance_score || 0,
-        avatarUrl: t.avatar_url
+        avatarUrl: t.avatar_url,
+        epsNames: epsMap[t.id] || []
       };
     });
   }, CACHE_TTL.SHORT);
@@ -531,6 +613,7 @@ export const bulkAddTechnicians = async (
 
   // 5. Limpiar caché
   clearCache(CACHE_KEYS.TECHNICIANS);
+  clearCache(CACHE_KEYS.TECHNICIANS_LIGHT);
   return createdTechs;
 };
 
@@ -715,6 +798,7 @@ export const addTechnician = async (techData: Partial<Technician>): Promise<Tech
 
   // Invalidar cache de técnicos
   clearCache(CACHE_KEYS.TECHNICIANS);
+  clearCache(CACHE_KEYS.TECHNICIANS_LIGHT);
 
   return newTech!;
 };
@@ -1054,6 +1138,9 @@ export const addArea = async (area: Partial<WorkArea>): Promise<{ success: boole
     return { success: false, error: error.message };
   }
 
+  // Invalidar caché
+  clearCache(CACHE_KEYS.AREAS);
+
   return {
     success: true,
     data: {
@@ -1073,6 +1160,7 @@ export const deleteArea = async (id: string): Promise<{ success: boolean; error?
     logger.error('Error deleting area:', error);
     return { success: false, error: error.message };
   }
+  clearCache(CACHE_KEYS.AREAS);
   return { success: true };
 };
 
@@ -1224,6 +1312,7 @@ export const addDocumentType = async (doc: Partial<DocumentType>): Promise<{ suc
     return { success: false, error: error.message };
   }
 
+  clearCache(CACHE_KEYS.DOC_TYPES);
   return {
     success: true,
     data: {
@@ -1248,6 +1337,7 @@ export const deleteDocumentType = async (id: string): Promise<{ success: boolean
     logger.error('Error deleting document type:', error);
     return { success: false, error: error.message };
   }
+  clearCache(CACHE_KEYS.DOC_TYPES);
   return { success: true };
 };
 
@@ -1330,6 +1420,8 @@ export const unlinkCompanyFromTechnician = async (techId: string, companyId: str
 
 export const toggleTechnicianStatus = async (techId: string, isActive: boolean) => {
   await supabase.from('technicians').update({ is_active: isActive }).eq('id', techId);
+  clearCache(CACHE_KEYS.TECHNICIANS);
+  clearCache(CACHE_KEYS.TECHNICIANS_LIGHT);
 };
 
 export const toggleTechnicianCompanyBlock = async (techId: string, companyId: string, blocked: boolean) => {
@@ -1337,6 +1429,9 @@ export const toggleTechnicianCompanyBlock = async (techId: string, companyId: st
     .from('technician_companies')
     .update({ is_blocked: blocked })
     .match({ technician_id: techId, company_id: companyId });
+
+  clearCache(CACHE_KEYS.TECHNICIANS);
+  clearCache(CACHE_KEYS.TECHNICIANS_LIGHT);
 };
 
 // Rodrigo Osorio v0.4 - Fecha de emisión obligatoria también en renovaciones
@@ -1368,6 +1463,8 @@ export const updateCredential = async (
 
   // Invalidar cache
   clearCache(CACHE_KEYS.TECHNICIANS);
+  clearCache(CACHE_KEYS.TECHNICIANS_LIGHT);
+  clearCache(CACHE_KEYS.COMPANIES_LIGHT);
 };
 
 // Rodrigo Osorio v0.3 - Fecha de emisión obligatoria para nuevos documentos
@@ -1414,6 +1511,8 @@ export const addCredentialToTechnician = async (
 
   // Invalidar cache
   clearCache(CACHE_KEYS.TECHNICIANS);
+  clearCache(CACHE_KEYS.TECHNICIANS_LIGHT);
+  clearCache(CACHE_KEYS.COMPANIES_LIGHT);
 };
 
 // Rodrigo Osorio v0.2 - Eliminar credencial de tecnico con su archivo
@@ -1431,23 +1530,52 @@ export const deleteCredential = async (credentialId: string, fileUrl?: string) =
 
   // Invalidar cache porque las credenciales afectan estado del técnico
   clearCache(CACHE_KEYS.TECHNICIANS);
+  clearCache(CACHE_KEYS.TECHNICIANS_LIGHT);
+  clearCache(CACHE_KEYS.COMPANIES_LIGHT);
 };
 
-// Rodrigo Osorio v0.16 - Nueva función para certificar carga en portal externo
-export const certifyCredentialInPortal = async (credentialId: string, userId: string): Promise<{ success: boolean; error?: string }> => {
+// Rodrigo Osorio v0.16 - Nueva función para certificar carga en portal externo (Actualizado v0.18 para per-company)
+export const certifyCredentialInPortal = async (credentialId: string, userId: string, companyId?: string): Promise<{ success: boolean; error?: string }> => {
   const now = new Date().toISOString();
 
-  const { error } = await supabase
-    .from('credentials')
-    .update({
-      portal_certified_at: now,
-      portal_certified_by: userId
-    })
-    .eq('id', credentialId);
+  if (companyId) {
+    // Nueva lógica: Registrar certificación para una empresa específica
+    const { error } = await supabase
+      .from('credential_portal_certifications')
+      .insert({
+        credential_id: credentialId,
+        company_id: companyId,
+        certified_by: userId,
+        certified_at: now
+      });
 
-  if (error) {
-    logger.error("Error certifying credential", error);
-    return { success: false, error: error.message };
+    if (error) {
+      // Si ya existía (unique violation), ignorar error o manejar según necesidad
+      if (error.code === '23505') return { success: true };
+      logger.error("Error certifying credential for company", error);
+      return { success: false, error: error.message };
+    }
+  } else {
+    // Lógica antigua (legacy): Actualizar campo global en la credencial
+    const { error } = await supabase
+      .from('credentials')
+      .update({
+        portal_certified_at: now,
+        portal_certified_by: userId
+      })
+      .eq('id', credentialId);
+
+    if (error) {
+      logger.error("Error certifying credential global", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Recalcular el estado del técnico después de certificar
+  const { data: credData } = await supabase.from('credentials').select('technician_id').eq('id', credentialId).single();
+  if (credData) {
+    const tech = await getTechnicianById(credData.technician_id);
+    if (tech) await recalculateAndSaveTechnicianStatus(tech);
   }
 
   // Invalidar cache
@@ -1676,39 +1804,91 @@ export const addCompanyCredential = async (
   issueDate: string         // Obligatorio para nuevos documentos
 ) => {
   const status = calculateStatus(expiryDate);
-  const insertData: any = {
-    company_id: companyId,
-    document_type_id: docTypeId,
+
+  // Rodrigo Osorio v0.19 - Evitar duplicidad: Buscar si ya existe el espacio reservado (placeholder)
+  const { data: existing } = await supabase
+    .from('company_credentials')
+    .select('id')
+    .match({ company_id: companyId, document_type_id: docTypeId })
+    .maybeSingle();
+
+  const credData: any = {
     expiry_date: expiryDate,
     status,
     issue_date: issueDate
   };
 
   if (fileUrl) {
-    insertData.file_url = fileUrl;
+    credData.file_url = fileUrl;
   }
 
-  const { data, error } = await supabase.from('company_credentials')
-    .insert(insertData)
-    .select()
-    .single();
+  let finalData;
 
-  if (error) return null;
-  return { ...data, companyId: data.company_id } as any;
+  if (existing) {
+    // Si existe, actualizamos el registro actual
+    const { data: updateData, error: updateError } = await supabase
+      .from('company_credentials')
+      .update(credData)
+      .eq('id', existing.id)
+      .select()
+      .single();
+
+    if (updateError) return null;
+    finalData = updateData;
+  } else {
+    // Si no existe, creamos uno nuevo
+    const { data: insertData, error: insertError } = await supabase
+      .from('company_credentials')
+      .insert({
+        company_id: companyId,
+        document_type_id: docTypeId,
+        ...credData
+      })
+      .select()
+      .single();
+
+    if (insertError) return null;
+    finalData = insertData;
+  }
+
+  clearCache(CACHE_KEYS.COMPANIES);
+  clearCache(CACHE_KEYS.COMPANIES_LIGHT);
+
+  return { ...finalData, companyId: finalData.company_id } as any;
 };
 
-// Rodrigo Osorio v0.2 - Eliminar credencial de empresa con su archivo
+// Rodrigo Osorio v0.3 - Eliminar credencial de empresa con su archivo + error handling
 export const deleteCompanyCredential = async (companyId: string, credentialId: string, fileUrl?: string) => {
-  // Eliminar archivo del storage si existe
-  if (fileUrl && fileUrl.includes('company-docs')) {
-    const { deleteDocument, extractPathFromUrl } = await import('./storageService');
-    const path = extractPathFromUrl(fileUrl, 'company');
-    if (path) {
-      await deleteDocument('company', path);
-    }
-  }
+  try {
+    console.log('[DELETE] Starting deletion for credential:', credentialId);
 
-  await supabase.from('company_credentials').delete().eq('id', credentialId);
+    // Eliminar archivo del storage si existe
+    if (fileUrl && fileUrl.includes('company-docs')) {
+      const { deleteDocument, extractPathFromUrl } = await import('./storageService');
+      const path = extractPathFromUrl(fileUrl, 'company');
+      if (path) {
+        console.log('[DELETE] Deleting file from storage:', path);
+        await deleteDocument('company', path);
+      }
+    }
+
+    console.log('[DELETE] Deleting from database...');
+    const { error } = await supabase.from('company_credentials').delete().eq('id', credentialId);
+
+    if (error) {
+      console.error('[DELETE] Database error:', error);
+      throw error;
+    }
+
+    console.log('[DELETE] Success! Clearing cache...');
+    clearCache(CACHE_KEYS.COMPANIES);
+    clearCache(CACHE_KEYS.COMPANIES_LIGHT);
+
+    return { success: true };
+  } catch (error) {
+    console.error('[DELETE] Failed to delete credential:', error);
+    return { success: false, error };
+  }
 };
 
 // Rodrigo Osorio v0.2 - Actualizado para soportar URLs reales de archivos
@@ -1733,6 +1913,9 @@ export const updateCompanyCredential = async (
   }
 
   await supabase.from('company_credentials').update(updateData).eq('id', credentialId);
+
+  clearCache(CACHE_KEYS.COMPANIES);
+  clearCache(CACHE_KEYS.COMPANIES_LIGHT);
 };
 
 // --- SETTINGS (Tech Types, Industries) ---
@@ -1749,6 +1932,7 @@ export const addTechType = async (name: string, description: string): Promise<{ 
     logger.error('Error adding tech type:', error);
     return { success: false, error: error.message };
   }
+  clearCache(CACHE_KEYS.TECH_TYPES);
   return { success: true };
 };
 
@@ -1758,6 +1942,7 @@ export const deleteTechType = async (id: string): Promise<{ success: boolean; er
     logger.error('Error deleting tech type:', error);
     return { success: false, error: error.message };
   }
+  clearCache(CACHE_KEYS.TECH_TYPES);
   return { success: true };
 };
 
@@ -1772,6 +1957,7 @@ export const addIndustry = async (name: string): Promise<{ success: boolean; err
     logger.error('Error adding industry:', error);
     return { success: false, error: error.message };
   }
+  clearCache(CACHE_KEYS.INDUSTRIES);
   return { success: true };
 };
 
@@ -1781,6 +1967,7 @@ export const deleteIndustry = async (id: string): Promise<{ success: boolean; er
     logger.error('Error deleting industry:', error);
     return { success: false, error: error.message };
   }
+  clearCache(CACHE_KEYS.INDUSTRIES);
   return { success: true };
 };
 
@@ -2035,6 +2222,7 @@ export const addServiceProvider = async (sp: Partial<ServiceProvider>): Promise<
     logger.error("Error adding service provider", error);
     return { success: false, error: error.message };
   }
+  clearCache(CACHE_KEYS.SERVICE_PROVIDERS);
   return { success: true, id: data.id };
 };
 
@@ -2049,6 +2237,7 @@ export const deleteServiceProvider = async (id: string): Promise<{ success: bool
     logger.error("Error deleting service provider", error);
     return { success: false, error: error.message };
   }
+  clearCache(CACHE_KEYS.SERVICE_PROVIDERS);
   return { success: true };
 };
 
@@ -2266,6 +2455,7 @@ export const updateServiceProvider = async (id: string, payload: Partial<Service
     logger.error("Error updating service provider", error);
     return { success: false, error: error.message };
   }
+  clearCache(CACHE_KEYS.SERVICE_PROVIDERS);
   return { success: true };
 };
 
@@ -2339,6 +2529,7 @@ export const addSupplierPortal = async (portal: Partial<SupplierPortal>): Promis
     return { success: false, error: error.message };
   }
 
+  clearCache(CACHE_KEYS.SUPPLIER_PORTALS);
   return { success: true, id: data.id };
 };
 
@@ -2360,6 +2551,7 @@ export const updateSupplierPortal = async (id: string, payload: Partial<Supplier
     console.error("Error updating supplier portal", error);
     return { success: false, error: error.message };
   }
+  clearCache(CACHE_KEYS.SUPPLIER_PORTALS);
   return { success: true };
 };
 
@@ -2392,6 +2584,7 @@ export const deleteSupplierPortal = async (id: string): Promise<{ success: boole
     console.error("Error deleting supplier portal", error);
     return { success: false, error: error.message };
   }
+  clearCache(CACHE_KEYS.SUPPLIER_PORTALS);
   return { success: true };
 };
 
@@ -2403,6 +2596,7 @@ export const updateIndustry = async (id: string, name: string): Promise<{ succes
     console.error("Error updating industry", error);
     return { success: false, error: error.message };
   }
+  clearCache(CACHE_KEYS.INDUSTRIES);
   return { success: true };
 };
 
@@ -2422,11 +2616,12 @@ export const updateDocumentType = async (id: string, payload: Partial<DocumentTy
     console.error("Error updating document type", error);
     return { success: false, error: error.message };
   }
+  clearCache(CACHE_KEYS.DOC_TYPES);
   return { success: true };
 };
 
 export const updateArea = async (id: string, payload: Partial<WorkArea>): Promise<{ success: boolean; error?: string }> => {
-  const { error } = await supabase.from('areas').update({
+  const { error } = await supabase.from('work_areas').update({
     name: payload.name,
     sla_days: payload.slaDays,
     sla_type: payload.slaType as any,
@@ -2437,6 +2632,7 @@ export const updateArea = async (id: string, payload: Partial<WorkArea>): Promis
     console.error("Error updating area", error);
     return { success: false, error: error.message };
   }
+  clearCache(CACHE_KEYS.AREAS);
   return { success: true };
 };
 
@@ -2450,6 +2646,7 @@ export const updateTechType = async (id: string, payload: Partial<TechnicianType
     console.error("Error updating technician type", error);
     return { success: false, error: error.message };
   }
+  clearCache(CACHE_KEYS.TECH_TYPES);
   return { success: true };
 };
 
@@ -2470,6 +2667,7 @@ export const updateTechnician = async (id: string, payload: Partial<Technician>)
 
   // Invalidar cache
   clearCache(CACHE_KEYS.TECHNICIANS);
+  clearCache(CACHE_KEYS.TECHNICIANS_LIGHT);
 
   return { success: true };
 };
@@ -2661,6 +2859,7 @@ export const addHoliday = async (date: string, name: string, isRecurring: boolea
     return { success: false, error: error.message };
   }
 
+  clearCache(CACHE_KEYS.HOLIDAYS);
   return { success: true };
 };
 
@@ -2674,6 +2873,7 @@ export const deleteHoliday = async (id: string): Promise<{ success: boolean; err
     return { success: false, error: error.message };
   }
 
+  clearCache(CACHE_KEYS.HOLIDAYS);
   return { success: true };
 };
 
